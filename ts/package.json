@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/samzong/kitup.git",
+    "url": "https://github.com/samzong/kitup",
     "directory": "ts"
   },
   "bugs": {
