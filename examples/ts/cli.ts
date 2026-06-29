@@ -1,8 +1,8 @@
-import { installBundledSkill } from "@kitup/sdk";
+import { directoryBundle, installBundledSkill } from "@kitup/sdk";
 
 const report = await installBundledSkill({
   appId: "kitup-example-ts",
-  skillDir: "../../skills/kitup",
+  skillBundle: directoryBundle("../../skills/kitup"),
   scope: "user",
 });
 

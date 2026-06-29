@@ -44,7 +44,10 @@
           "enum": [
             "detect",
             "install",
+            "parse-install-flags",
             "plan",
+            "run-install-workflow",
+            "resolve-install-selection",
             "resolve-hosts",
             "update",
             "uninstall",

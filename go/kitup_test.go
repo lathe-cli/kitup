@@ -1,6 +1,7 @@
 package kitup
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -58,9 +59,58 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 			equal(t, errs, expected)
 		}
 	case "validate":
-		result := ValidateSkill(repoPathFromCase(opts["skillDir"].(string)))
+		result := ValidateSkillBundle(skillBundleFromOptions(opts))
 		equal(t, result.Valid, tc.Expected["valid"])
 		equal(t, result.ErrorCode, tc.Expected["errorCode"])
+	case "parse-install-flags":
+		assertParsedFlags(t, ParseInstallFlags(InstallFlagValues{
+			Scope:    stringValue(opts["scope"]),
+			ScopeSet: boolValue(opts["scopeSet"]) || opts["scope"] != nil,
+			Agents:   stringSlice(opts["agents"]),
+			Yes:      boolValue(opts["yes"]),
+			DryRun:   boolValue(opts["dryRun"]),
+		}), tc.Expected["parsed"].(map[string]any))
+	case "resolve-install-selection":
+		selection, err := ResolveInstallSelection(InstallSelectionOptions{
+			BaseOptions: baseOptions(home, workspace),
+			Scope:       Scope(opts["scope"].(string)),
+			Agents:      agentSelector(opts["agents"]),
+			Yes:         boolValue(opts["yes"]),
+			StdinTTY:    boolValue(opts["stdinTTY"]),
+		})
+		must(t, err)
+		assertSelection(t, normalize(selection).(map[string]any), tc.Expected["selection"].(map[string]any))
+	case "run-install-workflow":
+		var out bytes.Buffer
+		report, err := RunBundledSkillInstall(InstallWorkflowOptions{
+			InstallOptions: InstallOptions{
+				BaseOptions: baseOptions(home, workspace),
+				AppID:       opts["appId"].(string),
+				SkillBundle: skillBundleFromOptions(opts),
+				Scope:       Scope(stringValue(opts["scope"])),
+				Agents:      agentSelector(opts["agents"]),
+			},
+			Yes:          boolValue(opts["yes"]),
+			DryRun:       boolValue(opts["dryRun"]),
+			StdinTTY:     boolValue(opts["stdinTTY"]),
+			DefaultScope: Scope(stringValue(opts["defaultScope"])),
+			ScopeSet:     boolValue(opts["scopeSet"]) || opts["scope"] != nil,
+			PromptScope:  boolValue(opts["promptScope"]),
+			In:           strings.NewReader(stringValue(opts["input"])),
+			Out:          &out,
+		})
+		must(t, err)
+		assertWorkflow(t, normalize(report).(map[string]any), tc.Expected["workflow"])
+		if expected, ok := tc.Expected["exit"]; ok {
+			equal(t, ClassifyInstallWorkflowExit(report), expected)
+		}
+		assertOutput(t, out.String(), tc.Expected["output"])
+		assertOutputContains(t, out.String(), tc.Expected["outputContains"])
+		if expected, ok := tc.Expected["report"]; ok {
+			equal(t, report.Report, expandValue(expected, home, workspace))
+		}
+		assertExpectedFiles(t, tc, home, workspace)
+		assertExpectedMetadata(t, tc, home, workspace)
 	default:
 		if expected, ok := tc.Expected["detectedHosts"]; ok {
 			hosts, err := DetectHosts(BaseOptions{Home: home, CWD: workspace, HostsFile: repoPathFromCase("spec/hosts.json")}, Scope(opts["scope"].(string)))
@@ -78,7 +128,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 }
 
 func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, home, workspace string) any {
-	base := BaseOptions{Home: home, CWD: workspace, HostsFile: repoPathFromCase("spec/hosts.json")}
+	base := baseOptions(home, workspace)
 	switch tc.Operation {
 	case "uninstall":
 		report, err := UninstallBundledSkill(UninstallOptions{
@@ -101,7 +151,7 @@ func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, home, works
 		report, err := fn(InstallOptions{
 			BaseOptions: base,
 			AppID:       opts["appId"].(string),
-			SkillDir:    repoPathFromCase(opts["skillDir"].(string)),
+			SkillBundle: skillBundleFromOptions(opts),
 			Scope:       Scope(opts["scope"].(string)),
 			Agents:      agentSelector(opts["agents"]),
 		})
@@ -113,6 +163,10 @@ func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, home, works
 	}
 }
 
+func baseOptions(home, workspace string) BaseOptions {
+	return BaseOptions{Home: home, CWD: workspace, HostsFile: repoPathFromCase("spec/hosts.json")}
+}
+
 func setupGiven(t *testing.T, tc goldenCase, home, workspace string) {
 	for _, dir := range stringSlice(tc.Given["dirs"]) {
 		must(t, os.MkdirAll(expandString(dir, home, workspace), 0o755))
@@ -122,9 +176,9 @@ func setupGiven(t *testing.T, tc goldenCase, home, workspace string) {
 			writeFixtureFile(t, expandString(path, home, workspace), value)
 		}
 	}
-	if target, ok := tc.Given["copySkillDirTo"].(string); ok {
+	if target, ok := tc.Given["copySkillBundleTo"].(string); ok {
 		must(t, os.RemoveAll(expandString(target, home, workspace)))
-		must(t, copySkillDir(caseSkillDir(tc), expandString(target, home, workspace)))
+		must(t, copySkillBundleDir(caseSkillBundleDir(tc), expandString(target, home, workspace)))
 	}
 	if meta, ok := tc.Given["metadata"].(map[string]any); ok {
 		writeMetadataFixture(t, tc, home, workspace, meta)
@@ -156,9 +210,13 @@ func assertExpectedMetadata(t *testing.T, tc goldenCase, home, workspace string)
 		equal(t, actual[key], value)
 	}
 	hash := meta["hash"].(string)
-	if hash == "from-skill-dir" {
+	if hash == "from-skill-bundle-dir" {
 		var err error
-		hash, err = ComputeContentHash(repoPathFromCase(tc.Options["skillDir"].(string)))
+		hash, err = ComputeBundleContentHash(DirectoryBundle(repoPathFromCase(tc.Options["skillBundleDir"].(string))))
+		must(t, err)
+	} else if hash == "from-skill-files" {
+		var err error
+		hash, err = ComputeBundleContentHash(FilesBundle(skillFiles(tc.Options["skillFiles"].([]any))))
 		must(t, err)
 	}
 	equal(t, actual["hash"], hash)
@@ -185,9 +243,9 @@ func assertExpectedWriteCounts(t *testing.T, tc goldenCase, report any, home, wo
 
 func writeMetadataFixture(t *testing.T, tc goldenCase, home, workspace string, meta map[string]any) {
 	hash := meta["hash"].(string)
-	if hash == "from-skill-dir" {
+	if hash == "from-skill-bundle-dir" {
 		var err error
-		hash, err = ComputeContentHash(caseSkillDir(tc))
+		hash, err = ComputeBundleContentHash(DirectoryBundle(caseSkillBundleDir(tc)))
 		must(t, err)
 	}
 	fields := map[string]any{}
@@ -196,6 +254,62 @@ func writeMetadataFixture(t *testing.T, tc goldenCase, home, workspace string, m
 	}
 	fields["hash"] = hash
 	writeFixtureFile(t, expandString(meta["path"].(string), home, workspace), fields)
+}
+
+func assertSelection(t *testing.T, actual, expected map[string]any) {
+	if expectedCount, ok := expected["selectedCount"]; ok {
+		equal(t, float64(len(actual["selectedHostIds"].([]any))), expectedCount)
+		delete(actual, "selectedHostIds")
+	}
+	if expectedCount, ok := expected["candidateCount"]; ok {
+		equal(t, float64(len(actual["candidateHostIds"].([]any))), expectedCount)
+		delete(actual, "candidateHostIds")
+	}
+	delete(expected, "selectedCount")
+	delete(expected, "candidateCount")
+	equal(t, actual, expected)
+}
+
+func assertWorkflow(t *testing.T, actual map[string]any, expected any) {
+	expectedMap, ok := expected.(map[string]any)
+	if !ok {
+		return
+	}
+	for key, value := range expectedMap {
+		equal(t, actual[key], value)
+	}
+}
+
+func assertParsedFlags(t *testing.T, actual ParsedInstallFlags, expected map[string]any) {
+	agentKind := actual.Agents.Kind
+	agentIDs := actual.Agents.IDs
+	if agentIDs == nil {
+		agentIDs = []string{}
+	}
+	equal(t, map[string]any{
+		"scope":     string(actual.Scope),
+		"scopeSet":  actual.ScopeSet,
+		"agentKind": agentKind,
+		"agentIds":  agentIDs,
+		"yes":       actual.Yes,
+		"dryRun":    actual.DryRun,
+		"errors":    actual.Errors,
+	}, expected)
+}
+
+func assertOutputContains(t *testing.T, actual string, expected any) {
+	for _, value := range stringSlice(expected) {
+		if !strings.Contains(actual, value) {
+			t.Fatalf("expected output to contain %q, got:\n%s", value, actual)
+		}
+	}
+}
+
+func assertOutput(t *testing.T, actual string, expected any) {
+	if expected == nil {
+		return
+	}
+	equal(t, actual, expected)
 }
 
 func writeFixtureFile(t *testing.T, path string, value any) {
@@ -223,9 +337,41 @@ func agentSelector(value any) AgentSelector {
 	return ExplicitAgents(stringSlice(value)...)
 }
 
-func caseSkillDir(tc goldenCase) string {
-	if skillDir, ok := tc.Options["skillDir"].(string); ok {
-		return repoPathFromCase(skillDir)
+func skillBundleFromOptions(opts map[string]any) SkillBundle {
+	if files, ok := opts["skillFiles"].([]any); ok {
+		return FilesBundle(skillFiles(files))
+	}
+	if dir, ok := opts["skillBundleDir"].(string); ok {
+		return DirectoryBundle(repoPathFromCase(dir))
+	}
+	return SkillBundle{}
+}
+
+func skillFiles(values []any) []SkillFile {
+	files := make([]SkillFile, 0, len(values))
+	for _, value := range values {
+		item := value.(map[string]any)
+		files = append(files, SkillFile{
+			Path:     item["path"].(string),
+			Contents: []byte(item["contents"].(string)),
+		})
+	}
+	return files
+}
+
+func boolValue(value any) bool {
+	boolean, _ := value.(bool)
+	return boolean
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func caseSkillBundleDir(tc goldenCase) string {
+	if dir, ok := tc.Options["skillBundleDir"].(string); ok {
+		return repoPathFromCase(dir)
 	}
 	return repoPathFromCase("testdata/skills/" + tc.Options["skillName"].(string))
 }

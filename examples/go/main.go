@@ -9,9 +9,9 @@ import (
 
 func main() {
 	report, err := kitup.InstallBundledSkill(kitup.InstallOptions{
-		AppID:    "kitup-example-go",
-		SkillDir: "../../skills/kitup",
-		Scope:    kitup.UserScope,
+		AppID:       "kitup-example-go",
+		SkillBundle: kitup.DirectoryBundle("../../skills/kitup"),
+		Scope:       kitup.UserScope,
 	})
 	if err != nil {
 		panic(err)

@@ -5,7 +5,10 @@
 Keep changes inside the v0.1 boundary:
 
 - validate local skill directories
+- validate embedded skill directory trees
 - detect agent hosts
+- resolve safe CLI install selection
+- run the safe CLI install workflow
 - resolve user and project skill directories
 - copy, update, and uninstall kitup-owned installs
 - preserve `.kitup.json` ownership safety
@@ -70,7 +73,7 @@ Host support is data-first.
 
 ## SDK Behavior Changes
 
-Every installer behavior needs a golden case in `testdata/cases`.
+Every source, selection, or installer behavior needs a golden case in `testdata/cases`.
 
 Before opening a pull request:
 

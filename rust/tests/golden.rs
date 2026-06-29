@@ -1,11 +1,15 @@
 use kitup::{
-    compute_content_hash, detect_hosts, install_bundled_skill, load_host_spec, plan_bundled_skill,
-    resolve_hosts, uninstall_bundled_skill, update_bundled_skill, AgentSelector, BaseOptions,
-    InstallOptions, Scope, UninstallOptions,
+    classify_install_workflow_exit, compute_bundle_content_hash, detect_hosts, directory_bundle,
+    files_bundle, install_bundled_skill, load_host_spec, parse_install_flags, plan_bundled_skill,
+    resolve_hosts, resolve_install_selection, run_bundled_skill_install_with_io,
+    uninstall_bundled_skill, update_bundled_skill, validate_skill_bundle, AgentSelector,
+    BaseOptions, InstallFlagValues, InstallOptions, InstallSelectionOptions,
+    InstallWorkflowOptions, ParsedInstallFlags, Scope, SkillBundle, SkillFile, UninstallOptions,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -60,12 +64,151 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
             }
         }
         "validate" => {
-            let result = kitup::validate_skill(&repo_path(options["skillDir"].as_str().unwrap()));
+            let result = validate_skill_bundle(&skill_bundle_from_options(options));
             assert_eq!(result.valid, case.expected["valid"].as_bool().unwrap());
             assert_eq!(
                 result.error_code.as_deref(),
                 case.expected.get("errorCode").and_then(Value::as_str)
             );
+        }
+        "parse-install-flags" => {
+            let parsed = parse_install_flags(InstallFlagValues {
+                scope: options
+                    .get("scope")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                scope_set: options
+                    .get("scopeSet")
+                    .and_then(Value::as_bool)
+                    .unwrap_or_else(|| options.get("scope").is_some()),
+                agents: options
+                    .get("agents")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| item.as_str().unwrap().to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                yes: options.get("yes").and_then(Value::as_bool).unwrap_or(false),
+                dry_run: options
+                    .get("dryRun")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            });
+            assert_json_eq(
+                &normalized_parsed_flags(&parsed),
+                case.expected["parsed"].clone(),
+            );
+        }
+        "resolve-install-selection" => {
+            let selection = resolve_install_selection(&InstallSelectionOptions {
+                base: BaseOptions {
+                    home: Some(home.to_path_buf()),
+                    cwd: Some(workspace.to_path_buf()),
+                    hosts_file: Some(repo_path("spec/hosts.json")),
+                },
+                scope: Some(scope(options["scope"].as_str().unwrap())),
+                agents: options.get("agents").map(agent_selector),
+                yes: options.get("yes").and_then(Value::as_bool).unwrap_or(false),
+                stdin_tty: options
+                    .get("stdinTTY")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                current_agent: options
+                    .get("currentAgent")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+            })
+            .unwrap();
+            assert_selection(
+                serde_json::to_value(selection).unwrap(),
+                case.expected["selection"].clone(),
+            );
+        }
+        "run-install-workflow" => {
+            let mut input = Cursor::new(
+                options
+                    .get("input")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .as_bytes()
+                    .to_vec(),
+            );
+            let mut output = Vec::new();
+            let workflow = run_bundled_skill_install_with_io(
+                &InstallWorkflowOptions {
+                    install: InstallOptions {
+                        base: BaseOptions {
+                            home: Some(home.to_path_buf()),
+                            cwd: Some(workspace.to_path_buf()),
+                            hosts_file: Some(repo_path("spec/hosts.json")),
+                        },
+                        app_id: options["appId"].as_str().unwrap().to_string(),
+                        skill_bundle: skill_bundle_from_options(options),
+                        scope: scope(
+                            options
+                                .get("scope")
+                                .and_then(Value::as_str)
+                                .unwrap_or("user"),
+                        ),
+                        agents: options
+                            .get("agents")
+                            .map(agent_selector)
+                            .unwrap_or(AgentSelector::Auto),
+                    },
+                    yes: options.get("yes").and_then(Value::as_bool).unwrap_or(false),
+                    dry_run: options
+                        .get("dryRun")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    stdin_tty: options
+                        .get("stdinTTY")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    current_agent: options
+                        .get("currentAgent")
+                        .and_then(Value::as_str)
+                        .map(String::from),
+                    default_scope: options
+                        .get("defaultScope")
+                        .and_then(Value::as_str)
+                        .map(scope),
+                    scope_set: options
+                        .get("scopeSet")
+                        .and_then(Value::as_bool)
+                        .unwrap_or_else(|| options.get("scope").is_some()),
+                    prompt_scope: options
+                        .get("promptScope")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                },
+                &mut input,
+                &mut output,
+            )
+            .unwrap();
+            let workflow_value = serde_json::to_value(&workflow).unwrap();
+            assert_workflow(&workflow_value, case.expected.get("workflow"));
+            if let Some(expected) = case.expected.get("exit") {
+                assert_json_eq(
+                    &serde_json::to_value(classify_install_workflow_exit(&workflow)).unwrap(),
+                    expected.clone(),
+                );
+            }
+            assert_output(
+                &String::from_utf8(output.clone()).unwrap(),
+                case.expected.get("output"),
+            );
+            assert_output_contains(
+                &String::from_utf8(output).unwrap(),
+                case.expected.get("outputContains"),
+            );
+            if let Some(expected) = case.expected.get("report") {
+                assert_json_eq(&workflow.report, expand_value(expected, home, workspace));
+            }
+            assert_expected_files(case, home, workspace);
+            assert_expected_metadata(case, home, workspace);
         }
         _ => {
             if let Some(expected) = case.expected.get("detectedHosts") {
@@ -115,7 +258,7 @@ fn run_report_case(
             let options = InstallOptions {
                 base,
                 app_id: options["appId"].as_str().unwrap().to_string(),
-                skill_dir: repo_path(options["skillDir"].as_str().unwrap()),
+                skill_bundle: skill_bundle_from_options(options),
                 scope: scope(options["scope"].as_str().unwrap()),
                 agents: agent_selector(&options["agents"]),
             };
@@ -144,10 +287,10 @@ fn setup_given(case: &GoldenCase, home: &Path, workspace: &Path) {
             write_fixture_file(&expand_string(path, home, workspace), value);
         }
     }
-    if let Some(target) = case.given.get("copySkillDirTo").and_then(Value::as_str) {
+    if let Some(target) = case.given.get("copySkillBundleTo").and_then(Value::as_str) {
         let target = expand_string(target, home, workspace);
         let _ = fs::remove_dir_all(&target);
-        copy_dir(&case_skill_dir(case), &target);
+        copy_dir(&case_skill_bundle_dir(case), &target);
     }
     if let Some(metadata) = case.given.get("metadata").and_then(Value::as_object) {
         write_metadata_fixture(case, home, workspace, metadata);
@@ -191,11 +334,87 @@ fn assert_expected_metadata(case: &GoldenCase, home: &Path, workspace: &Path) {
         assert_json_eq(&actual[key], value.clone());
     }
     let mut hash = metadata["hash"].as_str().unwrap().to_string();
-    if hash == "from-skill-dir" {
-        hash =
-            compute_content_hash(&repo_path(case.options["skillDir"].as_str().unwrap())).unwrap();
+    if hash == "from-skill-bundle-dir" {
+        hash = compute_bundle_content_hash(&directory_bundle(repo_path(
+            case.options["skillBundleDir"].as_str().unwrap(),
+        )))
+        .unwrap();
+    } else if hash == "from-skill-files" {
+        hash = compute_bundle_content_hash(&files_bundle(skill_files(
+            case.options["skillFiles"].as_array().unwrap(),
+        )))
+        .unwrap();
     }
     assert_eq!(actual["hash"], hash);
+}
+
+fn assert_selection(mut actual: Value, mut expected: Value) {
+    if let Some(selected_count) = expected.get("selectedCount").and_then(Value::as_u64) {
+        assert_eq!(
+            actual["selectedHostIds"].as_array().unwrap().len(),
+            selected_count as usize
+        );
+        actual.as_object_mut().unwrap().remove("selectedHostIds");
+        expected.as_object_mut().unwrap().remove("selectedCount");
+    }
+    if let Some(candidate_count) = expected.get("candidateCount").and_then(Value::as_u64) {
+        assert_eq!(
+            actual["candidateHostIds"].as_array().unwrap().len(),
+            candidate_count as usize
+        );
+        actual.as_object_mut().unwrap().remove("candidateHostIds");
+        expected.as_object_mut().unwrap().remove("candidateCount");
+    }
+    assert_json_eq(&actual, expected);
+}
+
+fn normalized_parsed_flags(parsed: &ParsedInstallFlags) -> Value {
+    let (agent_kind, agent_ids) = match &parsed.agents {
+        AgentSelector::Auto => ("auto", vec![]),
+        AgentSelector::All => ("*", vec![]),
+        AgentSelector::Explicit(ids) => ("explicit", ids.clone()),
+    };
+    json!({
+        "scope": match parsed.scope {
+            Scope::User => "user",
+            Scope::Project => "project",
+        },
+        "scopeSet": parsed.scope_set,
+        "agentKind": agent_kind,
+        "agentIds": agent_ids,
+        "yes": parsed.yes,
+        "dryRun": parsed.dry_run,
+        "errors": parsed.errors
+    })
+}
+
+fn assert_workflow(actual: &Value, expected: Option<&Value>) {
+    let Some(expected) = expected.and_then(Value::as_object) else {
+        return;
+    };
+    for (key, value) in expected {
+        assert_json_eq(&actual[key], value.clone());
+    }
+}
+
+fn assert_output_contains(actual: &str, expected: Option<&Value>) {
+    let Some(expected) = expected.and_then(Value::as_array) else {
+        return;
+    };
+    for value in expected {
+        let text = value.as_str().unwrap();
+        assert!(
+            actual.contains(text),
+            "expected output to contain {text}, got:\n{actual}"
+        );
+    }
+}
+
+fn assert_output(actual: &str, expected: Option<&Value>) {
+    let Some(expected) = expected.and_then(Value::as_str) else {
+        return;
+    };
+    assert_eq!(actual, expected);
 }
 
 fn assert_expected_write_counts(case: &GoldenCase, report: &Value, home: &Path, workspace: &Path) {
@@ -224,8 +443,8 @@ fn write_metadata_fixture(
 ) {
     let mut fields = metadata["fields"].as_object().unwrap().clone();
     let mut hash = metadata["hash"].as_str().unwrap().to_string();
-    if hash == "from-skill-dir" {
-        hash = compute_content_hash(&case_skill_dir(case)).unwrap();
+    if hash == "from-skill-bundle-dir" {
+        hash = compute_bundle_content_hash(&directory_bundle(case_skill_bundle_dir(case))).unwrap();
     }
     fields.insert("hash".to_string(), json!(hash));
     write_fixture_file(
@@ -279,6 +498,30 @@ fn agent_selector(value: &Value) -> AgentSelector {
     }
 }
 
+fn skill_bundle_from_options(options: &Map<String, Value>) -> SkillBundle {
+    if let Some(files) = options.get("skillFiles").and_then(Value::as_array) {
+        return files_bundle(skill_files(files));
+    }
+    if let Some(dir) = options.get("skillBundleDir").and_then(Value::as_str) {
+        return directory_bundle(repo_path(dir));
+    }
+    files_bundle(Vec::new())
+}
+
+fn skill_files(values: &[Value]) -> Vec<SkillFile> {
+    values
+        .iter()
+        .map(|value| {
+            let value = value.as_object().unwrap();
+            SkillFile {
+                path: value["path"].as_str().unwrap().to_string(),
+                contents: value["contents"].as_str().unwrap().as_bytes().to_vec(),
+                mode: None,
+            }
+        })
+        .collect()
+}
+
 fn scope(value: &str) -> Scope {
     match value {
         "user" => Scope::User,
@@ -287,9 +530,9 @@ fn scope(value: &str) -> Scope {
     }
 }
 
-fn case_skill_dir(case: &GoldenCase) -> PathBuf {
-    if let Some(skill_dir) = case.options.get("skillDir").and_then(Value::as_str) {
-        repo_path(skill_dir)
+fn case_skill_bundle_dir(case: &GoldenCase) -> PathBuf {
+    if let Some(skill_bundle_dir) = case.options.get("skillBundleDir").and_then(Value::as_str) {
+        repo_path(skill_bundle_dir)
     } else {
         repo_path(&format!(
             "testdata/skills/{}",
