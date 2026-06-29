@@ -1,6 +1,6 @@
 [package]
 name = "kitup"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Shared installer SDK for bundled Agent Skills."
 license = "MIT"

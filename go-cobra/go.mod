@@ -3,7 +3,7 @@ module github.com/samzong/kitup/go-cobra
 go 1.23
 
 require (
-	github.com/samzong/kitup/go v0.1.0
+	github.com/samzong/kitup/go v0.1.1
 	github.com/spf13/cobra v1.9.1
 )
 

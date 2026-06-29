@@ -1,6 +1,6 @@
 {
   "name": "@kitup/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared installer SDK for bundled Agent Skills.",
   "type": "module",
   "license": "MIT",
