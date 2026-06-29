@@ -36,6 +36,8 @@ jobs:
           VERSION="$version" node -e 'const { readFileSync } = require("node:fs"); const version = process.env.VERSION; const pkg = JSON.parse(readFileSync("ts/package.json", "utf8")); if (pkg.version !== version) { throw new Error(`ts/package.json version ${pkg.version} != ${version}`); }'
           rust_version="$(awk -F '"' '/^version = / { print $2; exit }' rust/Cargo.toml)"
           test "$rust_version" = "$version"
+          go_cobra_core_version="$(awk '/github.com\/samzong\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
+          test "$go_cobra_core_version" = "v$version"
       - name: Check published versions
         id: published
         run: |
@@ -72,16 +74,18 @@ jobs:
           cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish Go module tag
+      - name: Publish Go module tags
         run: |
           version="${GITHUB_REF_NAME#v}"
-          go_tag="go/v${version}"
-          if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
-            test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
-          else
-            git tag "$go_tag" "$GITHUB_SHA"
-            git push origin "refs/tags/${go_tag}"
-          fi
+          for module in go go-cobra; do
+            go_tag="${module}/v${version}"
+            if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
+              test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
+            else
+              git tag "$go_tag" "$GITHUB_SHA"
+              git push origin "refs/tags/${go_tag}"
+            fi
+          done
       - name: Create GitHub release
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes

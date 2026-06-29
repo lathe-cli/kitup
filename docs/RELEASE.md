@@ -1,29 +1,57 @@
 # Release
 
-`kitup` publishes one version across three SDKs:
+`kitup` publishes one version across four package surfaces:
 
 - npm: `@kitup/sdk`
 - crates.io: `kitup`
 - Go module: `github.com/samzong/kitup/go`
+- Go Cobra adapter: `github.com/samzong/kitup/go-cobra`
 
 ## Normal Release
 
-1. Update package versions.
-2. Run:
+Start from an up-to-date `main` branch:
 
 ```bash
-make check
+git checkout main
+git pull --ff-only
 ```
 
-3. Merge to `main`.
-4. Push a release tag:
+Prepare the release branch and version commit:
 
 ```bash
+make release-patch
+# or
+make release-minor
+# or
+make release-major
+```
+
+The release target creates `release/vX.Y.Z`, updates:
+
+- `ts/package.json`
+- `rust/Cargo.toml`
+- `rust/Cargo.lock`
+- `examples/rust/Cargo.lock`
+- `go-cobra/go.mod`
+
+It then runs `make check` and commits:
+
+```bash
+chore: prepare vX.Y.Z release
+```
+
+Open the release PR manually. After it is merged, tag the merge commit on `main` manually:
+
+```bash
+git checkout main
+git pull --ff-only
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The release workflow publishes npm and crates.io packages, creates the `go/vX.Y.Z` tag, creates the GitHub Release, and runs the public install smoke check.
+Do not tag the release branch. Do not publish packages by hand during the normal flow.
+
+The release workflow publishes npm and crates.io packages, creates the `go/vX.Y.Z` and `go-cobra/vX.Y.Z` tags, creates the GitHub Release, and runs the public install smoke check.
 
 ## First npm Release
 
@@ -44,7 +72,7 @@ The release workflow is resumable:
 
 - If npm already has the version, npm publish is skipped.
 - If crates.io already has the version, crate publish is skipped.
-- If `go/vX.Y.Z` already exists, the workflow verifies that it points at the release commit.
+- If `go/vX.Y.Z` or `go-cobra/vX.Y.Z` already exists, the workflow verifies that it points at the release commit.
 
 Do not delete and recreate a release tag after any registry has accepted the version unless the tag points at the wrong commit and the recovery plan is explicit.
 
@@ -56,4 +84,4 @@ Run the public install smoke check manually with:
 scripts/smoke-release.sh X.Y.Z
 ```
 
-The smoke check installs from npm, crates.io, and the public Go module, then verifies that each SDK can load the default host spec.
+The smoke check installs from npm, crates.io, the public Go module, and the public Go Cobra adapter, then verifies that each SDK can load the default host spec or instantiate its adapter.

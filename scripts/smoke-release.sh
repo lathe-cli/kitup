@@ -70,6 +70,34 @@ GO
 	go run .
 }
 
+smoke_go_cobra() {
+	dir="$(mktemp -d "$tmp/go-cobra.XXXXXX")"
+	cd "$dir"
+	go mod init kitup-release-smoke-cobra >/dev/null
+	go get "github.com/samzong/kitup/go-cobra@v$version" >/dev/null
+	test "$(go list -m -f '{{.Version}}' github.com/samzong/kitup/go)" = "v$version"
+	cat > main.go <<'GO'
+package main
+
+import (
+	"fmt"
+
+	kitup "github.com/samzong/kitup/go"
+	kitupcobra "github.com/samzong/kitup/go-cobra"
+)
+
+func main() {
+	cmd := kitupcobra.NewSkillCommand(kitupcobra.Options{})
+	if cmd.Use != kitup.InstallUX.SkillUse {
+		panic(fmt.Sprintf("expected %s, got %s", kitup.InstallUX.SkillUse, cmd.Use))
+	}
+	fmt.Printf("go-cobra ok: %s\n", cmd.Use)
+}
+GO
+	go run .
+}
+
 retry npm smoke_npm
 retry rust smoke_rust
 retry go smoke_go
+retry go-cobra smoke_go_cobra
