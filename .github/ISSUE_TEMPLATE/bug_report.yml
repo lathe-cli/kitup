@@ -1,0 +1,52 @@
+name: Bug report
+description: Report broken SDK behavior.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal command, code snippet, or fixture that reproduces the problem.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: sdk
+    attributes:
+      label: SDK
+      options:
+        - TypeScript
+        - Go
+        - Rust
+        - Shared spec or fixtures
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: kitup version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+

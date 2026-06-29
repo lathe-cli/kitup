@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose behavior inside the kitup product boundary.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What producer-side bundled-skill installer problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest behavior change that would solve it.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Boundary check
+      options:
+        - label: This is not a marketplace, registry, remote install, script execution, GUI, MCP server, or agent runtime feature.
+          required: true
+        - label: This behavior can be covered by shared golden cases.
+          required: true
+

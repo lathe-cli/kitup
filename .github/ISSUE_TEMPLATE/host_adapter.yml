@@ -1,0 +1,36 @@
+name: Host adapter request
+description: Add or correct an agent host path mapping.
+title: "host: "
+labels:
+  - host-adapter
+body:
+  - type: input
+    id: host
+    attributes:
+      label: Host name
+      placeholder: "Example Agent"
+    validations:
+      required: true
+  - type: textarea
+    id: docs
+    attributes:
+      label: Evidence
+      description: Link to official docs or provide local filesystem evidence for the skill path.
+    validations:
+      required: true
+  - type: textarea
+    id: paths
+    attributes:
+      label: Skill paths
+      description: User and project skill directories, if known.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: detection
+    attributes:
+      label: Detection paths
+      description: Paths that indicate the host is installed. Detection must not run commands or mutate config.
+      render: text
+    validations:
+      required: false
