@@ -63,6 +63,8 @@ make generate
 
 Push a `vX.Y.Z` tag to publish npm, crates.io, the `go/vX.Y.Z` module tag, and the GitHub Release.
 
+See [docs/RELEASE.md](docs/RELEASE.md).
+
 Required setup:
 
 - npm trusted publishing for `.github/workflows/release.yml`
