@@ -7,7 +7,10 @@
 The v0.1 product is deliberately small:
 
 - validate a local skill directory
+- validate an embedded bundled skill directory tree
 - detect local agent hosts
+- resolve safe CLI install selection before writes
+- run the safe CLI install workflow for bundled skills
 - resolve user and project skill directories
 - copy bundled skill files
 - write `.kitup.json` ownership metadata
@@ -22,12 +25,12 @@ Do not turn kitup into a marketplace, registry client, package manager, MCP serv
 
 One bundled skill, one SDK call, many agent hosts.
 
-The embedding CLI owns the skill. `kitup` owns the boring installer layer: host path lookup, detection, validation, copy/update/uninstall semantics, metadata, conflicts, and reports.
+The embedding CLI owns the skill and command shell. `kitup` owns the boring installer layer: host path lookup, detection, selection prompts, summary confirmation, validation, copy/update/uninstall semantics, metadata, conflicts, and reports.
 
 Keep the developer experience boring. A CLI author should only need to provide:
 
 - `appId`
-- `skillDir`
+- `skillBundle`
 - `scope`
 - `agents`
 
@@ -52,7 +55,7 @@ When docs and executable checks disagree, fix the source of truth or surface the
 
 Before non-trivial work, classify the request as one of:
 
-- v0.1 bundled-skill installer behavior
+- v0.1 bundled-skill source, selection, and installer behavior
 - host adapter data correction
 - fixture or parity improvement
 - documentation of existing behavior
@@ -60,7 +63,7 @@ Before non-trivial work, classify the request as one of:
 
 Only the first four are normal work. For post-v0.1 scope, do not implement product surface until the boundary is explicitly changed in docs and golden cases.
 
-Every new installer behavior needs a golden case. A behavior that cannot be expressed in `testdata/cases` is not ready to become SDK behavior.
+Every new source, selection, or installer behavior needs a golden case. A behavior that cannot be expressed in `testdata/cases` is not ready to become SDK behavior.
 
 Do not add speculative abstractions for future registries, package managers, remote sources, marketplace metadata, auth, or dependency resolution. Build the shallowest implementation that satisfies the existing case matrix.
 
@@ -97,6 +100,8 @@ Conflict is the safe default. `force` and `adopt` must stay explicit, tested, an
 Content hashes must be deterministic across TypeScript, Go, and Rust. Hash bundled skill files by sorted relative path and bytes, excluding `.kitup.json` and transient files.
 
 Reports are API contracts. Return structured `installed`, `updated`, `skipped`, `conflicts`, and `errors` data instead of relying on logs.
+
+Bundled skill sources are directory trees. `SKILL.md` must live at the bundle root, but references, scripts, assets, and other regular files are part of the same source and must be validated, hashed, and copied as a tree.
 
 ## Multi-Language Parity
 

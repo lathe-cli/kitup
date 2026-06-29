@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  cp,
+  mkdir,
   readdir,
   readFile,
   rename,
@@ -8,11 +8,36 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { defaultHostsSpecJson } from "./hosts.generated.js";
 
 export type Scope = "user" | "project";
 export type AgentSelector = "*" | "auto" | string[];
+
+export const installUxText = {
+  skillUse: "skill",
+  skillShort: "Manage bundled Agent Skill",
+  installUse: "install",
+  installShort: "Install bundled Agent Skill",
+  scopeFlag: "Install scope: user or project",
+  agentFlag: "Target agent id. Repeat for multiple agents. Use '*' for all.",
+  dryRunFlag: "Show install plan without writing",
+  yesFlag: "Skip prompts and accept policy-selected targets",
+  selectScope: "Select install scope:",
+  scopePrompt: "Scope (user/project)",
+  invalidScopeSelection: "Invalid scope selection.",
+  selectAgents: "Select agents:",
+  agentsPrompt: "Agents (numbers, ids, comma-separated, empty cancels)",
+  invalidAgentSelection: "Invalid agent selection.",
+  proceed: "Proceed? [y/N] ",
+  installSummary: "Install summary:",
+  errorPrefix: "kitup:",
+  canceled: "Installation canceled.",
+  selectionError: "Agent selection failed.",
+  conflict: "Installation has conflicts.",
+  failed: "Installation failed.",
+  invalidFlags: "Invalid install flags.",
+} as const;
 
 export interface Host {
   id: string;
@@ -36,9 +61,18 @@ export interface BaseOptions {
   hostsFile?: string;
 }
 
+export interface SkillFile {
+  path: string;
+  contents: string | Uint8Array;
+  mode?: number;
+}
+
+export type SkillBundle =
+  { kind: "directory"; path: string } | { kind: "files"; files: SkillFile[] };
+
 export interface InstallOptions extends BaseOptions {
   appId: string;
-  skillDir: string;
+  skillBundle: SkillBundle;
   scope: Scope;
   agents?: AgentSelector;
 }
@@ -48,6 +82,49 @@ export interface UninstallOptions extends BaseOptions {
   skillName: string;
   scope: Scope;
   agents?: AgentSelector;
+}
+
+export interface InstallSelectionOptions extends BaseOptions {
+  scope: Scope;
+  agents?: AgentSelector;
+  yes?: boolean;
+  stdinTTY?: boolean;
+  currentAgent?: string;
+}
+
+export interface InstallWorkflowOptions extends InstallOptions {
+  yes?: boolean;
+  dryRun?: boolean;
+  stdinTTY?: boolean;
+  currentAgent?: string;
+  defaultScope?: Scope;
+  scopeSet?: boolean;
+  promptScope?: boolean;
+  input?: AsyncIterable<string | Uint8Array>;
+  output?: { write(chunk: string): unknown };
+}
+
+export interface InstallFlagValues {
+  scope?: string;
+  scopeSet?: boolean;
+  agents?: string[];
+  yes?: boolean;
+  dryRun?: boolean;
+}
+
+export interface InstallFlagError {
+  flag: string;
+  reason: string;
+  value?: string;
+}
+
+export interface ParsedInstallFlags {
+  scope: Scope;
+  scopeSet: boolean;
+  agents: AgentSelector;
+  yes: boolean;
+  dryRun: boolean;
+  errors: InstallFlagError[];
 }
 
 export interface TargetGroup {
@@ -79,7 +156,7 @@ export type UnsupportedScopeError = {
   scope: Scope;
   reason: "unsupported-scope";
 };
-export type SkillError = { skillDir: string; reason: SkillInfo["errorCode"] };
+export type SkillError = { reason: SkillInfo["errorCode"] };
 export type TargetError = UnknownHostError | UnsupportedScopeError | SkillError;
 
 export interface InstallReport {
@@ -97,11 +174,45 @@ export interface UninstallReport {
   errors: TargetError[];
 }
 
+export type InstallSelectionAction = "install" | "select-agents" | "error";
+
+export interface InstallSelection {
+  action: InstallSelectionAction;
+  selectedHostIds: string[];
+  candidateHostIds: string[];
+  detectedHostIds: string[];
+  needsConfirmation: boolean;
+  errors: Array<{ reason: string; agent?: string }>;
+}
+
+export interface InstallWorkflowReport {
+  selection: InstallSelection;
+  scope: Scope | "";
+  plan: InstallReport;
+  report: InstallReport;
+  canceled: boolean;
+  dryRun: boolean;
+}
+
+export type InstallWorkflowExitCode =
+  | "ok"
+  | "canceled"
+  | "selection-error"
+  | "conflict"
+  | "error";
+
+export interface InstallWorkflowExit {
+  ok: boolean;
+  code: InstallWorkflowExitCode;
+  message: string;
+}
+
 export interface SkillInfo {
   valid: boolean;
   skillName?: string;
   description?: string;
-  errorCode?: "missing-skill-md" | "invalid-frontmatter";
+  errorCode?:
+    "missing-skill-md" | "invalid-frontmatter" | "invalid-skill-bundle";
 }
 
 interface InstallMetadata {
@@ -114,6 +225,109 @@ interface InstallMetadata {
 
 const source = "bundled";
 const defaultAgents: AgentSelector = "auto";
+
+interface BundleFile {
+  path: string;
+  bytes: Uint8Array;
+  mode: number;
+}
+
+interface NormalizedSkillBundle {
+  label?: string;
+  files: BundleFile[];
+  byPath: Map<string, BundleFile>;
+}
+
+export function directoryBundle(path: string): SkillBundle {
+  return { kind: "directory", path };
+}
+
+export function filesBundle(files: SkillFile[]): SkillBundle {
+  return { kind: "files", files };
+}
+
+export function parseInstallFlags(flags: InstallFlagValues): ParsedInstallFlags {
+  const errors: InstallFlagError[] = [];
+  const scope = parseScopeFlag(flags.scope, errors);
+  const agents = agentSelectorFromFlags(flags.agents ?? [], errors);
+  return {
+    scope,
+    scopeSet: flags.scopeSet ?? (flags.scope !== undefined),
+    agents,
+    yes: Boolean(flags.yes),
+    dryRun: Boolean(flags.dryRun),
+    errors,
+  };
+}
+
+export function agentSelectorFromFlags(
+  values: string[],
+  errors: InstallFlagError[] = [],
+): AgentSelector {
+  const agents = splitFlagValues(values);
+  if (agents.length === 0) return "auto";
+  if (agents.includes("*")) {
+    if (agents.length > 1) {
+      errors.push({
+        flag: "agent",
+        reason: "agent-star-must-be-alone",
+        value: agents.join(","),
+      });
+    }
+    return "*";
+  }
+  return [...new Set(agents)];
+}
+
+export function parseScopeFlag(
+  value: string | undefined,
+  errors: InstallFlagError[] = [],
+): Scope {
+  if (!value || value === "user") return "user";
+  if (value === "project") return "project";
+  errors.push({ flag: "scope", reason: "invalid-scope", value });
+  return "user";
+}
+
+function splitFlagValues(values: string[]) {
+  return values
+    .flatMap((value) => value.split(/[,\s]+/))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function classifyInstallWorkflowExit(
+  workflow: InstallWorkflowReport,
+): InstallWorkflowExit {
+  if (workflow.canceled) {
+    return { ok: false, code: "canceled", message: installUxText.canceled };
+  }
+  if (workflow.selection.errors.length > 0) {
+    return {
+      ok: false,
+      code: "selection-error",
+      message: installUxText.selectionError,
+    };
+  }
+  if (workflow.report.conflicts.length > 0) {
+    return { ok: false, code: "conflict", message: installUxText.conflict };
+  }
+  if (workflow.report.errors.length > 0) {
+    return { ok: false, code: "error", message: installUxText.failed };
+  }
+  return { ok: true, code: "ok", message: "" };
+}
+
+export function installWorkflowError(
+  workflow: InstallWorkflowReport,
+): Error | undefined {
+  const exit = classifyInstallWorkflowExit(workflow);
+  return exit.ok || exit.code === "canceled" ? undefined : new Error(exit.message);
+}
+
+export function installFlagError(errors: InstallFlagError[]): Error | undefined {
+  return errors.length === 0 ? undefined : new Error(installUxText.invalidFlags);
+}
 
 export async function loadHostSpec(hostsFile?: string): Promise<HostSpec> {
   return JSON.parse(
@@ -179,6 +393,202 @@ export async function detectHosts(
   });
 }
 
+export async function resolveInstallSelection(
+  options: InstallSelectionOptions,
+): Promise<InstallSelection> {
+  const hosts = (await loadHostSpec(options.hostsFile)).hosts;
+  const stdinTTY = options.stdinTTY ?? Boolean(process.stdin.isTTY);
+  const explicitAgents =
+    options.agents !== undefined && options.agents !== "auto";
+
+  if (options.currentAgent && !explicitAgents) {
+    const { hosts: selected, errors } = await resolveHosts({
+      agents: [options.currentAgent],
+      hosts,
+    });
+    const withUniversal = addUniversalHost(selected, hosts);
+    return installSelection(
+      withUniversal.map((host) => host.id),
+      [],
+      !options.yes && stdinTTY,
+      errors.map((error) => ({ ...error })),
+    );
+  }
+
+  if (explicitAgents) {
+    if (options.agents === "*") {
+      return installSelection(
+        hosts.map((host) => host.id),
+        [],
+        !options.yes && stdinTTY,
+      );
+    }
+    const resolved = await resolveHosts({ agents: options.agents!, hosts });
+    if (resolved.errors.length > 0) {
+      return errorSelection(
+        resolved.errors.map((error) => ({
+          reason: error.reason,
+          agent: error.agent,
+        })),
+      );
+    }
+    return installSelection(
+      resolved.hosts.map((host) => host.id),
+      [],
+      !options.yes && stdinTTY,
+    );
+  }
+
+  const detected = await detectHosts({ ...options, scope: options.scope });
+  const detectedHostIds = detected.map((host) => host.id);
+
+  if (!stdinTTY && !options.yes) {
+    return errorSelection(
+      [{ reason: "agent-selection-required" }],
+      detectedHostIds,
+    );
+  }
+
+  if (options.yes) {
+    if (detected.length === 0) {
+      return errorSelection([{ reason: "no-detected-hosts" }], detectedHostIds);
+    }
+    return installSelection(detectedHostIds, detectedHostIds, false);
+  }
+
+  if (detected.length === 0) {
+    return selectAgentsSelection(
+      hosts.map((host) => host.id),
+      detectedHostIds,
+      [],
+    );
+  }
+  if (detected.length === 1) {
+    return installSelection(detectedHostIds, detectedHostIds, true);
+  }
+  return selectAgentsSelection(detectedHostIds, detectedHostIds, []);
+}
+
+export async function runBundledSkillInstall(
+  options: InstallWorkflowOptions,
+): Promise<InstallWorkflowReport> {
+  const stdinTTY = options.stdinTTY ?? Boolean(process.stdin.isTTY);
+  const output = options.output ?? process.stdout;
+  const input =
+    options.input ??
+    (process.stdin as unknown as AsyncIterable<string | Uint8Array>);
+  const reader = new LineReader(input);
+  const scopeResult = await resolveWorkflowScope(
+    reader,
+    output,
+    options.scope,
+    options.scopeSet ?? (options.scope !== undefined),
+    Boolean(options.promptScope),
+    options.defaultScope,
+    Boolean(options.yes),
+    stdinTTY,
+  );
+  if (scopeResult.selection) {
+    renderSelectionErrors(output, scopeResult.selection);
+    return {
+      selection: scopeResult.selection,
+      scope: scopeResult.scope,
+      plan: emptyInstallReport(),
+      report: emptyInstallReport(),
+      canceled: false,
+      dryRun: Boolean(options.dryRun),
+    };
+  }
+  const scope = scopeResult.scope as Scope;
+  let selection = await resolveInstallSelection({
+    ...options,
+    scope,
+    stdinTTY,
+    yes: options.yes,
+    currentAgent: options.currentAgent,
+  });
+
+  if (selection.action === "error") {
+    renderSelectionErrors(output, selection);
+    return {
+      selection,
+      scope,
+      plan: emptyInstallReport(),
+      report: emptyInstallReport(),
+      canceled: false,
+      dryRun: Boolean(options.dryRun),
+    };
+  }
+
+  if (selection.action === "select-agents") {
+    const hosts = (await loadHostSpec(options.hostsFile)).hosts;
+    const selectedHostIds = await promptAgentSelection(
+      reader,
+      output,
+      selection,
+      hosts,
+    );
+    selection = installSelection(
+      selectedHostIds,
+      selection.detectedHostIds,
+      !options.yes && stdinTTY,
+    );
+    if (selectedHostIds.length === 0) {
+      return {
+        selection,
+        scope,
+        plan: emptyInstallReport(),
+        report: emptyInstallReport(),
+        canceled: true,
+        dryRun: Boolean(options.dryRun),
+      };
+    }
+  }
+
+  const installOptions: InstallOptions = {
+    ...options,
+    scope,
+    agents: selection.selectedHostIds,
+  };
+  const plan = await planBundledSkill(installOptions);
+  if (!hasVisibleInstallPlan(plan)) {
+    return {
+      selection,
+      scope,
+      plan,
+      report: plan,
+      canceled: false,
+      dryRun: Boolean(options.dryRun),
+    };
+  }
+  renderInstallSummary(output, plan);
+
+  if (options.dryRun) {
+    return { selection, scope, plan, report: plan, canceled: false, dryRun: true };
+  }
+
+  if (!hasInstallWrites(plan)) {
+    return { selection, scope, plan, report: plan, canceled: false, dryRun: false };
+  }
+
+  if (selection.needsConfirmation) {
+    const confirmed = await promptConfirmation(reader, output);
+    if (!confirmed) {
+      return {
+        selection,
+        scope,
+        plan,
+        report: emptyInstallReport(),
+        canceled: true,
+        dryRun: false,
+      };
+    }
+  }
+
+  const report = await installBundledSkill(installOptions);
+  return { selection, scope, plan, report, canceled: false, dryRun: false };
+}
+
 export async function resolveInstallTargets(
   options: BaseOptions & {
     agents?: AgentSelector;
@@ -236,18 +646,75 @@ export async function resolveInstallTargets(
   };
 }
 
-export async function validateSkill(
-  skillDir: string,
+function addUniversalHost(selected: Host[], hosts: Host[]) {
+  const result = [...selected];
+  const universal = hosts.find((host) => host.id === "universal");
+  if (universal && !result.some((host) => host.id === universal.id)) {
+    result.push(universal);
+  }
+  return result;
+}
+
+function installSelection(
+  selectedHostIds: string[],
+  detectedHostIds: string[] = [],
+  needsConfirmation: boolean,
+  errors: InstallSelection["errors"] = [],
+): InstallSelection {
+  return {
+    action: errors.length > 0 ? "error" : "install",
+    selectedHostIds,
+    candidateHostIds: [],
+    detectedHostIds,
+    needsConfirmation: errors.length > 0 ? false : needsConfirmation,
+    errors,
+  };
+}
+
+function selectAgentsSelection(
+  candidateHostIds: string[],
+  detectedHostIds: string[],
+  selectedHostIds: string[],
+): InstallSelection {
+  return {
+    action: "select-agents",
+    selectedHostIds,
+    candidateHostIds,
+    detectedHostIds,
+    needsConfirmation: true,
+    errors: [],
+  };
+}
+
+function errorSelection(
+  errors: InstallSelection["errors"],
+  detectedHostIds: string[] = [],
+): InstallSelection {
+  return {
+    action: "error",
+    selectedHostIds: [],
+    candidateHostIds: [],
+    detectedHostIds,
+    needsConfirmation: false,
+    errors,
+  };
+}
+
+export async function validateSkillBundle(
+  bundle: SkillBundle,
   cwd = process.cwd(),
 ): Promise<SkillInfo> {
-  const dir = resolvePath(skillDir, cwd);
-  let content: string;
   try {
-    content = await readFile(join(dir, "SKILL.md"), "utf8");
+    return validateNormalizedSkill(await readSkillBundle(bundle, cwd));
   } catch {
-    return { valid: false, errorCode: "missing-skill-md" };
+    return { valid: false, errorCode: "invalid-skill-bundle" };
   }
+}
 
+function validateNormalizedSkill(bundle: NormalizedSkillBundle): SkillInfo {
+  const skillFile = bundle.byPath.get("SKILL.md");
+  if (!skillFile) return { valid: false, errorCode: "missing-skill-md" };
+  const content = Buffer.from(skillFile.bytes).toString("utf8");
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!match) return { valid: false, errorCode: "invalid-frontmatter" };
   const frontmatter = parseFrontmatter(match[1]);
@@ -262,21 +729,96 @@ export async function validateSkill(
   return { valid: true, skillName: name, description };
 }
 
-export async function computeContentHash(
-  skillDir: string,
+export async function computeBundleContentHash(
+  bundle: SkillBundle,
   cwd = process.cwd(),
 ): Promise<string> {
-  const dir = resolvePath(skillDir, cwd);
-  const files = await listSkillFiles(dir);
+  return contentHash(await readSkillBundle(bundle, cwd));
+}
+
+function contentHash(bundle: NormalizedSkillBundle) {
   const hash = createHash("sha256");
-  for (const file of files) {
-    const bytes = await readFile(join(dir, file));
-    hash.update(file);
+  for (const file of bundle.files) {
+    const bytes = file.bytes;
+    hash.update(file.path);
     hash.update("\0");
     hash.update(bytes);
     hash.update("\0");
   }
   return `sha256:${hash.digest("hex")}`;
+}
+
+async function readSkillBundle(
+  bundle: SkillBundle,
+  cwd = process.cwd(),
+): Promise<NormalizedSkillBundle> {
+  if (bundle.kind === "directory") {
+    const dir = resolvePath(bundle.path, cwd);
+    return normalizeSkillFiles(await readDirectoryBundleFiles(dir), dir);
+  }
+  return normalizeSkillFiles(bundle.files);
+}
+
+async function readDirectoryBundleFiles(
+  dir: string,
+  base = dir,
+): Promise<SkillFile[]> {
+  const files: SkillFile[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (skipName(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await readDirectoryBundleFiles(full, base)));
+    } else if (entry.isFile()) {
+      files.push({
+        path: relative(base, full).split(sep).join("/"),
+        contents: await readFile(full),
+        mode: (await stat(full)).mode & 0o777,
+      });
+    }
+  }
+  return files;
+}
+
+function normalizeSkillFiles(
+  files: SkillFile[],
+  label?: string,
+): NormalizedSkillBundle {
+  const byPath = new Map<string, BundleFile>();
+  for (const file of files) {
+    const normalizedPath = normalizeBundlePath(file.path);
+    if (!normalizedPath) continue;
+    if (byPath.has(normalizedPath)) {
+      throw new Error(`duplicate skill file: ${normalizedPath}`);
+    }
+    byPath.set(normalizedPath, {
+      path: normalizedPath,
+      bytes:
+        typeof file.contents === "string"
+          ? Buffer.from(file.contents)
+          : file.contents,
+      mode: file.mode ?? 0o644,
+    });
+  }
+  const normalizedFiles = [...byPath.values()].sort((a, b) =>
+    a.path.localeCompare(b.path),
+  );
+  return { label, files: normalizedFiles, byPath };
+}
+
+function normalizeBundlePath(path: string) {
+  if (!path || path.includes("\\") || path.startsWith("/")) {
+    throw new Error(`invalid skill file path: ${path}`);
+  }
+  if (/^[A-Za-z]:/.test(path)) {
+    throw new Error(`invalid skill file path: ${path}`);
+  }
+  const parts = path.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`invalid skill file path: ${path}`);
+  }
+  if (parts.some(skipName)) return undefined;
+  return parts.join("/");
 }
 
 export async function installBundledSkill(
@@ -296,15 +838,18 @@ async function installOrPlan(
   write: boolean,
 ): Promise<InstallReport> {
   const cwd = options.cwd ?? process.cwd();
-  const skill = await validateSkill(options.skillDir, cwd);
+  let bundle: NormalizedSkillBundle;
+  try {
+    bundle = await readSkillBundle(options.skillBundle, cwd);
+  } catch {
+    return emptyInstallReport([{ reason: "invalid-skill-bundle" }]);
+  }
+  const skill = validateNormalizedSkill(bundle);
   if (!skill.valid || !skill.skillName) {
-    return emptyInstallReport([
-      { skillDir: options.skillDir, reason: skill.errorCode },
-    ]);
+    return emptyInstallReport([{ reason: skill.errorCode }]);
   }
 
-  const skillDir = resolvePath(options.skillDir, cwd);
-  const hash = await computeContentHash(skillDir);
+  const hash = contentHash(bundle);
   const { targets, errors } = await resolveInstallTargets({
     ...options,
     skillName: skill.skillName,
@@ -317,7 +862,7 @@ async function installOrPlan(
     if (!metadata.exists) {
       if (write) {
         await copyManagedSkill(
-          skillDir,
+          bundle,
           target.targetDir,
           options.appId,
           skill.skillName,
@@ -334,7 +879,7 @@ async function installOrPlan(
     } else {
       if (write) {
         await replaceManagedSkill(
-          skillDir,
+          bundle,
           target.targetDir,
           options.appId,
           skill.skillName,
@@ -387,19 +932,19 @@ export async function uninstallBundledSkill(
 }
 
 async function copyManagedSkill(
-  skillDir: string,
+  bundle: NormalizedSkillBundle,
   targetDir: string,
   appId: string,
   skillName: string,
   hash: string,
 ) {
   await rm(targetDir, { recursive: true, force: true });
-  await copySkillDir(skillDir, targetDir);
+  await copySkillBundle(bundle, targetDir);
   await writeMetadata(targetDir, appId, skillName, hash);
 }
 
 async function replaceManagedSkill(
-  skillDir: string,
+  bundle: NormalizedSkillBundle,
   targetDir: string,
   appId: string,
   skillName: string,
@@ -409,7 +954,7 @@ async function replaceManagedSkill(
   const tmp = `${targetDir}${suffix}`;
   const backup = `${targetDir}${suffix}-backup`;
   await rm(tmp, { recursive: true, force: true });
-  await copySkillDir(skillDir, tmp);
+  await copySkillBundle(bundle, tmp);
   await writeMetadata(tmp, appId, skillName, hash);
   try {
     await rename(targetDir, backup);
@@ -423,11 +968,13 @@ async function replaceManagedSkill(
   }
 }
 
-async function copySkillDir(src: string, dest: string) {
-  await cp(src, dest, {
-    recursive: true,
-    filter: (source) => !skipName(basename(source)),
-  });
+async function copySkillBundle(bundle: NormalizedSkillBundle, dest: string) {
+  await mkdir(dest, { recursive: true });
+  for (const file of bundle.files) {
+    const target = join(dest, file.path);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, file.bytes, { mode: file.mode });
+  }
 }
 
 async function writeMetadata(
@@ -465,6 +1012,204 @@ function targetResult(target: TargetGroup): TargetResult {
 
 function emptyInstallReport(errors: TargetError[] = []): InstallReport {
   return { installed: [], updated: [], skipped: [], conflicts: [], errors };
+}
+
+function hasVisibleInstallPlan(report: InstallReport) {
+  return (
+    report.installed.length +
+      report.updated.length +
+      report.conflicts.length +
+      report.errors.length >
+    0
+  );
+}
+
+function hasInstallWrites(report: InstallReport) {
+  return report.installed.length + report.updated.length > 0;
+}
+
+class LineReader {
+  private buffer = "";
+  private done = false;
+  private readonly iterator: AsyncIterator<string | Uint8Array>;
+
+  constructor(input: AsyncIterable<string | Uint8Array>) {
+    this.iterator = input[Symbol.asyncIterator]();
+  }
+
+  async readLine() {
+    while (true) {
+      const newline = this.buffer.indexOf("\n");
+      if (newline >= 0) {
+        const line = this.buffer.slice(0, newline).replace(/\r$/, "");
+        this.buffer = this.buffer.slice(newline + 1);
+        return line;
+      }
+      if (this.done) {
+        if (!this.buffer) return undefined;
+        const line = this.buffer.replace(/\r$/, "");
+        this.buffer = "";
+        return line;
+      }
+      const next = await this.iterator.next();
+      if (next.done) {
+        this.done = true;
+      } else {
+        this.buffer +=
+          typeof next.value === "string"
+            ? next.value
+            : Buffer.from(next.value).toString("utf8");
+      }
+    }
+  }
+}
+
+async function resolveWorkflowScope(
+  reader: LineReader,
+  output: { write(chunk: string): unknown },
+  requested: Scope | undefined,
+  scopeSet: boolean,
+  promptScope: boolean,
+  configuredDefault: Scope | undefined,
+  yes: boolean,
+  stdinTTY: boolean,
+): Promise<{ scope: Scope | ""; selection?: InstallSelection }> {
+  const defaultScope = configuredDefault ?? "user";
+  const scope = requested ?? defaultScope;
+  if (scopeSet || !promptScope) return { scope };
+  if (yes) return { scope: defaultScope };
+  if (!stdinTTY) {
+    return {
+      scope: "",
+      selection: errorSelection([{ reason: "scope-selection-required" }]),
+    };
+  }
+  return { scope: await promptScopeSelection(reader, output, defaultScope) };
+}
+
+async function promptScopeSelection(
+  reader: LineReader,
+  output: { write(chunk: string): unknown },
+  defaultScope: Scope,
+) {
+  while (true) {
+    writeLine(output, installUxText.selectScope);
+    writeLine(output, "  1. user");
+    writeLine(output, "  2. project");
+    output.write(`${installUxText.scopePrompt} [${defaultScope}]: `);
+    const selected = parseScopeSelection((await reader.readLine()) ?? "", defaultScope);
+    if (selected) return selected;
+    writeLine(output, installUxText.invalidScopeSelection);
+  }
+}
+
+function parseScopeSelection(line: string, defaultScope: Scope): Scope | undefined {
+  switch (line.trim().toLowerCase()) {
+    case "":
+      return defaultScope;
+    case "1":
+    case "u":
+    case "user":
+      return "user";
+    case "2":
+    case "p":
+    case "project":
+      return "project";
+    default:
+      return undefined;
+  }
+}
+
+async function promptAgentSelection(
+  reader: LineReader,
+  output: { write(chunk: string): unknown },
+  selection: InstallSelection,
+  hosts: Host[],
+) {
+  const candidates = selection.candidateHostIds
+    .map((id) => hosts.find((host) => host.id === id))
+    .filter((host): host is Host => Boolean(host));
+  while (true) {
+    writeLine(output, installUxText.selectAgents);
+    candidates.forEach((host, index) => {
+      writeLine(output, `  ${index + 1}. ${host.displayName} (${host.id})`);
+    });
+    const current = selection.selectedHostIds.join(",");
+    const suffix = current ? ` [${current}]` : "";
+    output.write(`${installUxText.agentsPrompt}${suffix}: `);
+    const line = await reader.readLine();
+    const selected = parseAgentSelection(line ?? "", selection, candidates);
+    if (selected) return selected;
+    writeLine(output, installUxText.invalidAgentSelection);
+  }
+}
+
+function parseAgentSelection(
+  line: string,
+  selection: InstallSelection,
+  candidates: Host[],
+) {
+  const trimmed = line.trim();
+  if (!trimmed) return selection.selectedHostIds;
+  if (trimmed === "*") return candidates.map((host) => host.id);
+
+  const byName = new Map<string, string>();
+  candidates.forEach((host, index) => {
+    byName.set(String(index + 1), host.id);
+    byName.set(host.id, host.id);
+    for (const alias of host.aliases ?? []) byName.set(alias, host.id);
+  });
+
+  const selected: string[] = [];
+  const seen = new Set<string>();
+  for (const part of trimmed.split(/[,\s]+/)) {
+    const id = byName.get(part);
+    if (!id) return undefined;
+    if (!seen.has(id)) {
+      seen.add(id);
+      selected.push(id);
+    }
+  }
+  return selected;
+}
+
+async function promptConfirmation(
+  reader: LineReader,
+  output: { write(chunk: string): unknown },
+) {
+  output.write(installUxText.proceed);
+  const line = (await reader.readLine()) ?? "";
+  return (
+    line.trim().toLowerCase() === "y" || line.trim().toLowerCase() === "yes"
+  );
+}
+
+function renderInstallSummary(
+  output: { write(chunk: string): unknown },
+  report: InstallReport,
+) {
+  for (const item of [...report.installed, ...report.updated]) {
+    for (const host of summaryHosts(item)) {
+      writeLine(output, `  - ${item.skillName} -> ${item.targetDir} (${host})`);
+    }
+  }
+}
+
+function summaryHosts(item: TargetResult) {
+  return "hostId" in item ? [item.hostId] : item.hostIds;
+}
+
+function renderSelectionErrors(
+  output: { write(chunk: string): unknown },
+  selection: InstallSelection,
+) {
+  for (const error of selection.errors) {
+    writeLine(output, `${installUxText.errorPrefix} ${error.reason}`);
+  }
+}
+
+function writeLine(output: { write(chunk: string): unknown }, line: string) {
+  output.write(`${line}\n`);
 }
 
 function canonicalScopePath(

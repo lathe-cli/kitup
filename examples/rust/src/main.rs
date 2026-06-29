@@ -1,10 +1,12 @@
-use kitup::{install_bundled_skill, AgentSelector, BaseOptions, InstallOptions, Scope};
+use kitup::{
+    directory_bundle, install_bundled_skill, AgentSelector, BaseOptions, InstallOptions, Scope,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let report = install_bundled_skill(&InstallOptions {
         base: BaseOptions::default(),
         app_id: "kitup-example-rust".to_string(),
-        skill_dir: "../../skills/kitup".into(),
+        skill_bundle: directory_bundle("../../skills/kitup"),
         scope: Scope::User,
         agents: AgentSelector::Auto,
     })?;

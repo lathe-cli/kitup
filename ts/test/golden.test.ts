@@ -9,17 +9,24 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
-  computeContentHash,
+  classifyInstallWorkflowExit,
+  computeBundleContentHash,
   detectHosts,
+  directoryBundle,
+  filesBundle,
   installBundledSkill,
   loadHostSpec,
   planBundledSkill,
+  parseInstallFlags,
+  resolveInstallSelection,
   resolveHosts,
+  runBundledSkillInstall,
   uninstallBundledSkill,
   updateBundledSkill,
-  validateSkill,
+  validateSkillBundle,
 } from "../dist/index.js";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
@@ -74,9 +81,57 @@ async function runCase(testCase: any, home: string, workspace: string) {
   }
 
   if (testCase.operation === "validate") {
-    const result = await validateSkill(options.skillDir, options.cwd);
+    const result = await validateSkillBundle(options.skillBundle, options.cwd);
     assert.equal(result.valid, testCase.expected.valid);
     assert.equal(result.errorCode, testCase.expected.errorCode);
+    return;
+  }
+
+  if (testCase.operation === "parse-install-flags") {
+    assert.deepEqual(
+      normalizeParsedFlags(parseInstallFlags(options)),
+      testCase.expected.parsed,
+    );
+    return;
+  }
+
+  if (testCase.operation === "resolve-install-selection") {
+    const selection = await resolveInstallSelection({
+      ...options,
+      hostsFile,
+    });
+    assertSelection(selection, testCase.expected.selection);
+    return;
+  }
+
+  if (testCase.operation === "run-install-workflow") {
+    const output = {
+      text: "",
+      write(chunk: string) {
+        this.text += chunk;
+      },
+    };
+    const workflow = await runBundledSkillInstall({
+      ...options,
+      hostsFile,
+      input: Readable.from([options.input ?? ""]),
+      output,
+    });
+    assertWorkflow(workflow, testCase.expected.workflow);
+    if (testCase.expected.exit)
+      assert.deepEqual(
+        classifyInstallWorkflowExit(workflow),
+        testCase.expected.exit,
+      );
+    assertOutput(output.text, testCase.expected.output);
+    assertOutputContains(output.text, testCase.expected.outputContains);
+    if (testCase.expected.report)
+      assert.deepEqual(
+        workflow.report,
+        expandValue(testCase.expected.report, home, workspace),
+      );
+    await assertExpectedFiles(testCase, home, workspace);
+    await assertExpectedMetadata(testCase, home, workspace);
     return;
   }
 
@@ -121,10 +176,10 @@ async function setupGiven(testCase: any, home: string, workspace: string) {
     await writeFixtureFile(expandValue(path, home, workspace), value);
   }
 
-  if (testCase.given.copySkillDirTo) {
+  if (testCase.given.copySkillBundleTo) {
     await copyFixtureSkill(
-      caseSkillDir(testCase),
-      expandValue(testCase.given.copySkillDirTo, home, workspace),
+      caseSkillBundleDir(testCase),
+      expandValue(testCase.given.copySkillBundleTo, home, workspace),
     );
   }
 
@@ -162,9 +217,15 @@ async function assertExpectedMetadata(
   for (const [key, value] of Object.entries(expected.fields))
     assert.deepEqual(actual[key], value);
   const expectedHash =
-    expected.hash === "from-skill-dir"
-      ? await computeContentHash(resolveRepoPath(testCase.options.skillDir))
-      : expected.hash;
+    expected.hash === "from-skill-bundle-dir"
+      ? await computeBundleContentHash(
+          directoryBundle(resolveRepoPath(testCase.options.skillBundleDir)),
+        )
+      : expected.hash === "from-skill-files"
+        ? await computeBundleContentHash(
+            filesBundle(testCase.options.skillFiles),
+          )
+        : expected.hash;
   assert.equal(actual.hash, expectedHash);
 }
 
@@ -193,8 +254,10 @@ async function writeMetadataFixture(
 ) {
   const path = expandValue(metadata.path, home, workspace);
   const hash =
-    metadata.hash === "from-skill-dir"
-      ? await computeContentHash(caseSkillDir(testCase))
+    metadata.hash === "from-skill-bundle-dir"
+      ? await computeBundleContentHash(
+          directoryBundle(caseSkillBundleDir(testCase)),
+        )
       : metadata.hash;
   await writeFixtureFile(path, { ...metadata.fields, hash });
 }
@@ -231,7 +294,12 @@ async function assertFileMissing(path: string) {
 
 function expandOptions(options: any, home: string, workspace: string) {
   const expanded = expandValue(options, home, workspace);
-  if (expanded.skillDir) expanded.skillDir = resolveRepoPath(expanded.skillDir);
+  if (expanded.skillBundleDir)
+    expanded.skillBundle = directoryBundle(
+      resolveRepoPath(expanded.skillBundleDir),
+    );
+  if (expanded.skillFiles)
+    expanded.skillBundle = filesBundle(expanded.skillFiles);
   return expanded;
 }
 
@@ -255,9 +323,54 @@ function resolveRepoPath(path: string) {
   return path.startsWith("/") ? path : join(repo, path);
 }
 
-function caseSkillDir(testCase: any) {
+function caseSkillBundleDir(testCase: any) {
   return resolveRepoPath(
-    testCase.options.skillDir ??
+    testCase.options.skillBundleDir ??
       `testdata/skills/${testCase.options.skillName}`,
   );
+}
+
+function assertSelection(actual: any, expected: any) {
+  const normalized = { ...actual };
+  if (expected.selectedCount !== undefined) {
+    assert.equal(normalized.selectedHostIds.length, expected.selectedCount);
+    delete normalized.selectedHostIds;
+  }
+  if (expected.candidateCount !== undefined) {
+    assert.equal(normalized.candidateHostIds.length, expected.candidateCount);
+    delete normalized.candidateHostIds;
+  }
+  const normalizedExpected = { ...expected };
+  delete normalizedExpected.selectedCount;
+  delete normalizedExpected.candidateCount;
+  assert.deepEqual(normalized, normalizedExpected);
+}
+
+function assertWorkflow(actual: any, expected: any) {
+  if (!expected) return;
+  for (const [key, value] of Object.entries(expected)) {
+    assert.deepEqual(actual[key], value);
+  }
+}
+
+function assertOutputContains(actual: string, expected: string[] = []) {
+  for (const value of expected) {
+    assert.ok(actual.includes(value), `expected output to contain ${value}`);
+  }
+}
+
+function assertOutput(actual: string, expected: string | undefined) {
+  if (expected !== undefined) assert.equal(actual, expected);
+}
+
+function normalizeParsedFlags(parsed: any) {
+  return {
+    scope: parsed.scope,
+    scopeSet: parsed.scopeSet,
+    agentKind: Array.isArray(parsed.agents) ? "explicit" : parsed.agents,
+    agentIds: Array.isArray(parsed.agents) ? parsed.agents : [],
+    yes: parsed.yes,
+    dryRun: parsed.dryRun,
+    errors: parsed.errors,
+  };
 }

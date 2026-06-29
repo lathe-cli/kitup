@@ -149,12 +149,128 @@
       }
     },
     {
+      "id": "parse-install-flags-defaults",
+      "operation": "parse-install-flags",
+      "description": "Maps missing install flags to the user default while recording that scope was not explicit.",
+      "options": {},
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "parsed": {
+          "scope": "user",
+          "scopeSet": false,
+          "agentKind": "auto",
+          "agentIds": [],
+          "yes": false,
+          "dryRun": false,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "parse-install-flags-explicit",
+      "operation": "parse-install-flags",
+      "description": "Maps repeated and comma-separated agent flags to a deduplicated explicit selector.",
+      "options": {
+        "scope": "project",
+        "agents": [
+          "codex,claude-code",
+          "codex"
+        ],
+        "yes": true,
+        "dryRun": true
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "parsed": {
+          "scope": "project",
+          "scopeSet": true,
+          "agentKind": "explicit",
+          "agentIds": [
+            "codex",
+            "claude-code"
+          ],
+          "yes": true,
+          "dryRun": true,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "parse-install-flags-star",
+      "operation": "parse-install-flags",
+      "description": "Maps --agent '*' to the all-host selector.",
+      "options": {
+        "agents": [
+          "*"
+        ]
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "parsed": {
+          "scope": "user",
+          "scopeSet": false,
+          "agentKind": "*",
+          "agentIds": [],
+          "yes": false,
+          "dryRun": false,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "parse-install-flags-errors",
+      "operation": "parse-install-flags",
+      "description": "Reports invalid scope and mixed star agent selector flags.",
+      "options": {
+        "scope": "global",
+        "agents": [
+          "*",
+          "codex"
+        ]
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "parsed": {
+          "scope": "user",
+          "scopeSet": true,
+          "agentKind": "*",
+          "agentIds": [],
+          "yes": false,
+          "dryRun": false,
+          "errors": [
+            {
+              "flag": "scope",
+              "reason": "invalid-scope",
+              "value": "global"
+            },
+            {
+              "flag": "agent",
+              "reason": "agent-star-must-be-alone",
+              "value": "*,codex"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "shared-target-deduplication-many-hosts",
       "operation": "install",
       "description": "Copies once when many supported agents share the .agents/skills project target.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "project",
         "agents": [
           "amp",
@@ -229,7 +345,7 @@
       "description": "Installs a bundled skill into the canonical user scope for an explicit host.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -272,7 +388,7 @@
             "skillName": "basic",
             "source": "bundled"
           },
-          "hash": "from-skill-dir"
+          "hash": "from-skill-bundle-dir"
         }
       }
     },
@@ -282,7 +398,7 @@
       "description": "Installs Codex user-scope skills into the first canonical user path when multiple user paths are valid.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -326,7 +442,7 @@
       "description": "Installs a bundled skill into the canonical project scope for an explicit host.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "project",
         "agents": [
           "codex"
@@ -364,7 +480,7 @@
       "description": "Reports the project-scope install target without writing skill files.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "project",
         "agents": [
           "codex"
@@ -401,7 +517,7 @@
       "description": "Installs into a project-only host when project scope is selected explicitly.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "project",
         "agents": [
           "eve"
@@ -439,7 +555,7 @@
       "description": "Reports an unsupported-scope error when a project-only host is selected for user scope.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "eve"
@@ -474,7 +590,7 @@
       "description": "Installs only into the explicitly selected host targets.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex",
@@ -517,7 +633,7 @@
       "description": "Uses detection paths to select installed hosts for automatic installation.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": "auto",
         "home": "$HOME",
@@ -563,7 +679,7 @@
       "description": "Returns an empty report when automatic host detection finds no supported hosts.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": "auto",
         "home": "$HOME",
@@ -590,7 +706,7 @@
       "description": "Copies once when multiple selected hosts resolve to the same canonical target directory.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex",
@@ -635,7 +751,7 @@
       "description": "Skips a kitup-owned target when its metadata hash matches the bundled skill.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -647,7 +763,7 @@
         "dirs": [
           "$HOME/.agents/skills/basic"
         ],
-        "copySkillDirTo": "$HOME/.agents/skills/basic",
+        "copySkillBundleTo": "$HOME/.agents/skills/basic",
         "metadata": {
           "path": "$HOME/.agents/skills/basic/.kitup.json",
           "fields": {
@@ -656,7 +772,7 @@
             "skillName": "basic",
             "source": "bundled"
           },
-          "hash": "from-skill-dir"
+          "hash": "from-skill-bundle-dir"
         }
       },
       "expected": {
@@ -677,12 +793,124 @@
       }
     },
     {
+      "id": "workflow-unchanged-silent",
+      "operation": "run-install-workflow",
+      "description": "Does not render a user-facing summary or confirmation when every selected target is unchanged.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "stdinTTY": true,
+        "yes": false,
+        "input": "y\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "copySkillBundleTo": "$HOME/.agents/skills/basic",
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          },
+          "hash": "from-skill-bundle-dir"
+        }
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": true,
+          "code": "ok",
+          "message": ""
+        },
+        "output": "",
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unchanged"
+            }
+          ],
+          "conflicts": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-conflict-exit",
+      "operation": "run-install-workflow",
+      "description": "Returns a conflict exit classification when the plan has conflicts but no writes.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "stdinTTY": true,
+        "yes": false,
+        "input": "y\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/SKILL.md": "---\nname: basic\ndescription: Unmanaged fixture.\n---\n\n# Basic\n"
+        }
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": false,
+          "code": "conflict",
+          "message": "Installation has conflicts."
+        },
+        "output": "",
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        }
+      }
+    },
+    {
       "id": "changed-update",
       "operation": "update",
       "description": "Replaces a kitup-owned target when its metadata hash differs from the bundled skill.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -731,7 +959,7 @@
       "description": "Refuses to overwrite a target directory that has no kitup metadata.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -770,7 +998,7 @@
       "description": "Refuses to overwrite a kitup-managed target owned by another app.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -827,7 +1055,7 @@
         "dirs": [
           "$HOME/.agents/skills/basic"
         ],
-        "copySkillDirTo": "$HOME/.agents/skills/basic",
+        "copySkillBundleTo": "$HOME/.agents/skills/basic",
         "metadata": {
           "path": "$HOME/.agents/skills/basic/.kitup.json",
           "fields": {
@@ -836,7 +1064,7 @@
             "skillName": "basic",
             "source": "bundled"
           },
-          "hash": "from-skill-dir"
+          "hash": "from-skill-bundle-dir"
         }
       },
       "expected": {
@@ -909,7 +1137,7 @@
       "operation": "validate",
       "description": "Rejects a skill directory without SKILL.md.",
       "options": {
-        "skillDir": "testdata/skills/missing-skill-md",
+        "skillBundleDir": "testdata/skills/missing-skill-md",
         "cwd": "$WORKSPACE"
       },
       "given": {
@@ -926,7 +1154,7 @@
       "operation": "validate",
       "description": "Rejects SKILL.md frontmatter that violates the Agent Skills naming and description rules.",
       "options": {
-        "skillDir": "testdata/skills/invalid-frontmatter",
+        "skillBundleDir": "testdata/skills/invalid-frontmatter",
         "cwd": "$WORKSPACE"
       },
       "given": {
@@ -944,7 +1172,7 @@
       "description": "Copies nested references, scripts, and assets with the bundled skill.",
       "options": {
         "appId": "example-cli",
-        "skillDir": "testdata/skills/basic",
+        "skillBundleDir": "testdata/skills/basic",
         "scope": "user",
         "agents": [
           "codex"
@@ -965,6 +1193,738 @@
           "$HOME/.agents/skills/basic/scripts/helper.sh",
           "$HOME/.agents/skills/basic/assets/template.json"
         ]
+      }
+    },
+    {
+      "id": "embedded-skill-source",
+      "operation": "install",
+      "description": "Installs a bundled skill from an embedded directory tree source without materializing a directory source first.",
+      "options": {
+        "appId": "example-cli",
+        "skillFiles": [
+          {
+            "path": "SKILL.md",
+            "contents": "---\nname: embedded\ndescription: Embedded whole skill tree fixture.\n---\n\n# Embedded\n"
+          },
+          {
+            "path": "references/guide.md",
+            "contents": "# Guide\n"
+          },
+          {
+            "path": "assets/template.json",
+            "contents": "{\"ok\":true}\n"
+          },
+          {
+            "path": ".kitup.json",
+            "contents": "{\"ignored\":true}\n"
+          },
+          {
+            "path": ".DS_Store",
+            "contents": "ignored"
+          }
+        ],
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "embedded",
+              "targetDir": "$HOME/.agents/skills/embedded"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/embedded/SKILL.md",
+          "$HOME/.agents/skills/embedded/references/guide.md",
+          "$HOME/.agents/skills/embedded/assets/template.json",
+          "$HOME/.agents/skills/embedded/.kitup.json"
+        ],
+        "filesAbsent": [
+          "$HOME/.agents/skills/embedded/.DS_Store"
+        ],
+        "metadata": {
+          "path": "$HOME/.agents/skills/embedded/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "embedded",
+            "source": "bundled"
+          },
+          "hash": "from-skill-files"
+        }
+      }
+    },
+    {
+      "id": "workflow-explicit-agent",
+      "operation": "resolve-install-selection",
+      "description": "Explicit agents select canonical hosts without detection.",
+      "options": {
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "stdinTTY": false,
+        "yes": false,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "install",
+          "selectedHostIds": [
+            "codex"
+          ],
+          "candidateHostIds": [],
+          "detectedHostIds": [],
+          "needsConfirmation": false,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-agent-star",
+      "operation": "resolve-install-selection",
+      "description": "Agent star explicitly selects every supported host.",
+      "options": {
+        "scope": "user",
+        "agents": "*",
+        "stdinTTY": false,
+        "yes": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "install",
+          "selectedCount": 72,
+          "candidateHostIds": [],
+          "detectedHostIds": [],
+          "needsConfirmation": false,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-scope-prompt-before-agent",
+      "operation": "run-install-workflow",
+      "description": "TTY workflow prompts for scope before planning an explicit agent install when scope was not provided.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "agents": [
+          "codex"
+        ],
+        "stdinTTY": true,
+        "promptScope": true,
+        "input": "project\ny\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "scope": "project",
+          "canceled": false,
+          "dryRun": false
+        },
+        "outputContains": [
+          "Select install scope:",
+          "Scope (user/project) [user]: ",
+          "  - basic -> ",
+          "(codex)"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$WORKSPACE/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$WORKSPACE/.agents/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-scope-non-tty-error",
+      "operation": "run-install-workflow",
+      "description": "Non-TTY workflow refuses to choose scope implicitly when scope was not provided.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "agents": [
+          "codex"
+        ],
+        "stdinTTY": false,
+        "promptScope": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "scope": "",
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": false,
+          "code": "selection-error",
+          "message": "Agent selection failed."
+        },
+        "output": "kitup: scope-selection-required\n",
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic/SKILL.md",
+          "$WORKSPACE/.agents/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-scope-yes-default",
+      "operation": "run-install-workflow",
+      "description": "Yes mode uses the configured default scope when scope was not provided.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "agents": [
+          "codex"
+        ],
+        "stdinTTY": false,
+        "promptScope": true,
+        "defaultScope": "project",
+        "yes": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "scope": "project",
+          "canceled": false,
+          "dryRun": false
+        },
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$WORKSPACE/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$WORKSPACE/.agents/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-shared-target-renders-host-rows",
+      "operation": "run-install-workflow",
+      "description": "Shared target install still renders one user-facing row per selected host.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "project",
+        "agents": [
+          "codex",
+          "cursor",
+          "github-copilot",
+          "opencode"
+        ],
+        "stdinTTY": true,
+        "input": "y\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "scope": "project",
+          "canceled": false,
+          "dryRun": false
+        },
+        "outputContains": [
+          "(codex)",
+          "(cursor)",
+          "(github-copilot)",
+          "(opencode)",
+          "Proceed? [y/N]"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostIds": [
+                "codex",
+                "cursor",
+                "github-copilot",
+                "opencode"
+              ],
+              "skillName": "basic",
+              "targetDir": "$WORKSPACE/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$WORKSPACE/.agents/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-zero-detected-tty-prompts",
+      "operation": "resolve-install-selection",
+      "description": "TTY with no detected hosts asks the user to choose from supported hosts.",
+      "options": {
+        "scope": "user",
+        "stdinTTY": true,
+        "yes": false,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "select-agents",
+          "selectedHostIds": [],
+          "candidateCount": 72,
+          "detectedHostIds": [],
+          "needsConfirmation": true,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-one-detected-auto-selects",
+      "operation": "resolve-install-selection",
+      "description": "TTY with one detected host can select it before summary confirmation.",
+      "options": {
+        "scope": "user",
+        "stdinTTY": true,
+        "yes": false,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "install",
+          "selectedHostIds": [
+            "codex"
+          ],
+          "candidateHostIds": [],
+          "detectedHostIds": [
+            "codex"
+          ],
+          "needsConfirmation": true,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-many-detected-tty-prompts",
+      "operation": "resolve-install-selection",
+      "description": "TTY with multiple detected hosts enters agent multi-selection instead of auto-installing all.",
+      "options": {
+        "scope": "user",
+        "stdinTTY": true,
+        "yes": false,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex",
+          "$HOME/.claude"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "select-agents",
+          "selectedHostIds": [],
+          "candidateHostIds": [
+            "codex",
+            "claude-code"
+          ],
+          "detectedHostIds": [
+            "codex",
+            "claude-code"
+          ],
+          "needsConfirmation": true,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-many-detected-enter-cancels",
+      "operation": "run-install-workflow",
+      "description": "TTY multi-select with an empty selection cancels instead of installing every detected host.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "stdinTTY": true,
+        "yes": false,
+        "input": "\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex",
+          "$HOME/.claude"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "canceled": true,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": false,
+          "code": "canceled",
+          "message": "Installation canceled."
+        },
+        "outputContains": [
+          "Select agents:"
+        ],
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic/SKILL.md",
+          "$HOME/.claude/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-many-detected-select-one-confirms",
+      "operation": "run-install-workflow",
+      "description": "TTY multi-select installs only the selected host after summary confirmation.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "stdinTTY": true,
+        "yes": false,
+        "input": "1\ny\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex",
+          "$HOME/.claude"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": true,
+          "code": "ok",
+          "message": ""
+        },
+        "outputContains": [
+          "Select agents:",
+          "(codex)",
+          "Proceed? [y/N]"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/SKILL.md",
+          "$HOME/.agents/skills/basic/assets/template.json"
+        ],
+        "filesAbsent": [
+          "$HOME/.claude/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-one-detected-confirms-installs",
+      "operation": "run-install-workflow",
+      "description": "TTY with one detected host still renders a summary and waits for confirmation before writing.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "stdinTTY": true,
+        "yes": false,
+        "input": "y\n",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": true,
+          "code": "ok",
+          "message": ""
+        },
+        "outputContains": [
+          "(codex)",
+          "Proceed? [y/N]"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-yes-batch-installs-detected",
+      "operation": "run-install-workflow",
+      "description": "Yes mode skips prompts and installs every detected host explicitly selected by policy.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "stdinTTY": false,
+        "yes": true,
+        "input": "",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex",
+          "$HOME/.claude"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": true,
+          "code": "ok",
+          "message": ""
+        },
+        "outputContains": [
+          "(codex)"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            },
+            {
+              "hostId": "claude-code",
+              "skillName": "basic",
+              "targetDir": "$HOME/.claude/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/SKILL.md",
+          "$HOME/.claude/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-many-detected-yes-installs",
+      "operation": "resolve-install-selection",
+      "description": "Yes mode can accept detected hosts non-interactively.",
+      "options": {
+        "scope": "user",
+        "stdinTTY": false,
+        "yes": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex",
+          "$HOME/.claude"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "install",
+          "selectedHostIds": [
+            "codex",
+            "claude-code"
+          ],
+          "candidateHostIds": [],
+          "detectedHostIds": [
+            "codex",
+            "claude-code"
+          ],
+          "needsConfirmation": false,
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-non-tty-no-agent-error",
+      "operation": "resolve-install-selection",
+      "description": "Non-TTY without explicit agent or yes cannot enter interactive selection.",
+      "options": {
+        "scope": "user",
+        "stdinTTY": false,
+        "yes": false,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "error",
+          "selectedHostIds": [],
+          "candidateHostIds": [],
+          "detectedHostIds": [
+            "codex"
+          ],
+          "needsConfirmation": false,
+          "errors": [
+            {
+              "reason": "agent-selection-required"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "workflow-zero-detected-yes-error",
+      "operation": "resolve-install-selection",
+      "description": "Yes mode does not turn zero detection into all-host installation.",
+      "options": {
+        "scope": "user",
+        "stdinTTY": false,
+        "yes": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "selection": {
+          "action": "error",
+          "selectedHostIds": [],
+          "candidateHostIds": [],
+          "detectedHostIds": [],
+          "needsConfirmation": false,
+          "errors": [
+            {
+              "reason": "no-detected-hosts"
+            }
+          ]
+        }
       }
     }
   ]

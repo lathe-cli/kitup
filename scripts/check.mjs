@@ -93,6 +93,10 @@ function validateCases(cases, hosts) {
     "alias-resolution",
     "kimi-alias-resolution",
     "unknown-host-id",
+    "parse-install-flags-defaults",
+    "parse-install-flags-explicit",
+    "parse-install-flags-star",
+    "parse-install-flags-errors",
     "shared-target-deduplication-many-hosts",
     "user-scope-install",
     "codex-user-scope-prefers-first-user-dir",
@@ -103,6 +107,8 @@ function validateCases(cases, hosts) {
     "auto-host-detection",
     "auto-host-detection-empty",
     "unchanged-noop",
+    "workflow-unchanged-silent",
+    "workflow-conflict-exit",
     "changed-update",
     "unmanaged-conflict",
     "different-owner-conflict",
@@ -110,7 +116,24 @@ function validateCases(cases, hosts) {
     "uninstall-owner-mismatch",
     "missing-skill-md",
     "invalid-frontmatter",
-    "nested-resources-copied"
+    "nested-resources-copied",
+    "embedded-skill-source",
+    "workflow-explicit-agent",
+    "workflow-agent-star",
+    "workflow-scope-prompt-before-agent",
+    "workflow-scope-non-tty-error",
+    "workflow-scope-yes-default",
+    "workflow-shared-target-renders-host-rows",
+    "workflow-zero-detected-tty-prompts",
+    "workflow-one-detected-auto-selects",
+    "workflow-many-detected-tty-prompts",
+    "workflow-many-detected-enter-cancels",
+    "workflow-many-detected-select-one-confirms",
+    "workflow-one-detected-confirms-installs",
+    "workflow-yes-batch-installs-detected",
+    "workflow-many-detected-yes-installs",
+    "workflow-non-tty-no-agent-error",
+    "workflow-zero-detected-yes-error"
   ]) {
     assert(caseIds.has(id), `missing golden case: ${id}`);
   }
@@ -153,6 +176,7 @@ for (const [name, command, args, cwd, env] of [
   ["generated-hosts", "node", ["scripts/sync-hosts.mjs", "--check"], rootPath],
   ["typescript", "pnpm", ["--dir", "ts", "test"], rootPath],
   ["go", "go", ["test", "./..."], new URL("../go/", import.meta.url)],
+  ["go-cobra", "go", ["test", "./..."], new URL("../go-cobra/", import.meta.url)],
   ["rust", "cargo", ["test"], new URL("../rust/", import.meta.url)],
   [
     "example-ts",

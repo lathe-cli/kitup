@@ -10,7 +10,7 @@ Use kitup as a producer-side SDK. The embedding CLI owns the bundled skill; kitu
 Call the SDK with:
 
 - `appId`: stable id for the embedding CLI
-- `skillDir`: local bundled skill directory containing `SKILL.md`
+- `skillBundle`: bundled skill directory tree source containing `SKILL.md`
 - `scope`: `user` or `project`
 - `agents`: explicit host ids, `auto`, or all supported hosts
 
