@@ -160,6 +160,10 @@ function validateCases(cases, hosts) {
     "workflow-many-detected-yes-installs",
     "workflow-non-tty-no-agent-error",
     "workflow-zero-detected-yes-error",
+    "github-bundle-install",
+    "github-bundle-dry-run",
+    "github-bundle-resolve-failure",
+    "github-bundle-unchanged",
   ]) {
     assert(caseIds.has(id), `missing golden case: ${id}`);
   }

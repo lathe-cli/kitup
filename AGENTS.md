@@ -8,6 +8,7 @@ The v0.1 product is deliberately small:
 
 - validate a local skill directory
 - validate an embedded bundled skill directory tree
+- resolve a public GitHub skill bundle directory tree
 - detect local agent hosts
 - resolve safe CLI install selection before writes
 - run the safe CLI install workflow for bundled skills
@@ -19,7 +20,7 @@ The v0.1 product is deliberately small:
 - return structured reports
 - enforce parity through shared golden cases
 
-Do not turn kitup into a marketplace, registry client, package manager, MCP server, GUI, agent runtime integration layer, or arbitrary skill installer. Remote installs, GitHub source installs, marketplace search, plugin systems, `AGENTS.md` mutation, script execution, and symlink-first workflows are outside v0.1 unless this boundary and golden cases are changed first.
+Do not turn kitup into a marketplace, registry client, package manager, MCP server, GUI, agent runtime integration layer, or arbitrary skill installer. Only first-party public GitHub bundle resolution is inside v0.1 behavior. Other remote installs, private GitHub auth, marketplace search, plugin systems, `AGENTS.md` mutation, script execution, and symlink-first workflows are outside v0.1 unless this boundary and golden cases are changed first.
 
 ## Product Promise
 
@@ -55,7 +56,8 @@ When docs and executable checks disagree, fix the source of truth or surface the
 
 Before non-trivial work, classify the request as one of:
 
-- v0.1 bundled-skill source, selection, and installer behavior
+- v0.1 bundled-skill bundle, selection, and installer behavior
+- public GitHub bundle behavior
 - host adapter data correction
 - fixture or parity improvement
 - documentation of existing behavior
@@ -63,9 +65,9 @@ Before non-trivial work, classify the request as one of:
 
 Only the first four are normal work. For post-v0.1 scope, do not implement product surface until the boundary is explicitly changed in docs and golden cases.
 
-Every new source, selection, or installer behavior needs a golden case. A behavior that cannot be expressed in `testdata/cases` is not ready to become SDK behavior.
+Every new bundle input, selection, or installer behavior needs a golden case. A behavior that cannot be expressed in `testdata/cases` is not ready to become SDK behavior.
 
-Do not add speculative abstractions for future registries, package managers, remote sources, marketplace metadata, auth, or dependency resolution. Build the shallowest implementation that satisfies the existing case matrix.
+Do not add speculative abstractions for future registries, package managers, custom providers, marketplace metadata, auth, or dependency resolution. Build the shallowest implementation that satisfies the existing case matrix.
 
 ## Host Adapter Rules
 
@@ -101,7 +103,7 @@ Content hashes must be deterministic across TypeScript, Go, and Rust. Hash bundl
 
 Reports are API contracts. Return structured `installed`, `updated`, `skipped`, `conflicts`, and `errors` data instead of relying on logs.
 
-Bundled skill sources are directory trees. `SKILL.md` must live at the bundle root, but references, scripts, assets, and other regular files are part of the same source and must be validated, hashed, and copied as a tree.
+Skill bundles are directory trees. `SKILL.md` must live at the bundle root, but references, scripts, assets, and other regular files are part of the same bundle and must be validated, hashed, and copied as a tree.
 
 ## Multi-Language Parity
 

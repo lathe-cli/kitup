@@ -1926,6 +1926,233 @@
           ]
         }
       }
+    },
+    {
+      "id": "github-bundle-install",
+      "operation": "install",
+      "description": "Installs a public GitHub bundle with provenance metadata while keeping the user-facing install flow unchanged.",
+      "options": {
+        "appId": "example-cli",
+        "githubBundle": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "path": "skills/github-basic",
+          "ref": "main"
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {},
+        "github": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "ref": "main",
+          "commit": "abc123",
+          "treeSha": "tree123",
+          "files": {
+            "skills/github-basic/SKILL.md": "---\nname: github-basic\ndescription: GitHub sourced skill.\n---\n",
+            "skills/github-basic/references/guide.md": "GitHub guide.\n",
+            "other/SKILL.md": "---\nname: ignored\ndescription: Ignored skill.\n---\n"
+          }
+        }
+      },
+      "expected": {
+        "filesPresent": [
+          "$HOME/.agents/skills/github-basic/SKILL.md",
+          "$HOME/.agents/skills/github-basic/references/guide.md"
+        ],
+        "filesAbsent": [
+          "$HOME/.agents/skills/github-basic/other/SKILL.md"
+        ],
+        "metadata": {
+          "path": "$HOME/.agents/skills/github-basic/.kitup.json",
+          "hash": "from-github-bundle",
+          "fields": {
+            "appId": "example-cli",
+            "skillName": "github-basic",
+            "source": "github",
+            "sourceId": "github:acme/mycli-skills/skills/github-basic",
+            "version": "main",
+            "provenance": {
+              "owner": "acme",
+              "repo": "mycli-skills",
+              "path": "skills/github-basic",
+              "ref": "main",
+              "resolvedCommit": "abc123"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "github-bundle-dry-run",
+      "operation": "run-install-workflow",
+      "description": "Plans a GitHub bundle install without writing files in dry-run mode.",
+      "options": {
+        "appId": "example-cli",
+        "githubBundle": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "path": "skills/github-basic",
+          "ref": "main"
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "yes": true,
+        "dryRun": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {},
+        "github": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "ref": "main",
+          "commit": "abc123",
+          "treeSha": "tree123",
+          "files": {
+            "skills/github-basic/SKILL.md": "---\nname: github-basic\ndescription: GitHub sourced skill.\n---\n"
+          }
+        }
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": true
+        },
+        "filesAbsent": [
+          "$HOME/.agents/skills/github-basic/SKILL.md",
+          "$HOME/.agents/skills/github-basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "github-bundle-resolve-failure",
+      "operation": "install",
+      "description": "Reports a structured error when the configured GitHub bundle path has no files.",
+      "options": {
+        "appId": "example-cli",
+        "githubBundle": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "path": "skills/missing",
+          "ref": "main"
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {},
+        "github": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "ref": "main",
+          "commit": "abc123",
+          "treeSha": "tree123",
+          "files": {
+            "skills/github-basic/SKILL.md": "---\nname: github-basic\ndescription: GitHub sourced skill.\n---\n"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": [
+            {
+              "reason": "bundle-resolve-failed"
+            }
+          ]
+        },
+        "filesAbsent": [
+          "$HOME/.agents/skills/github-basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "github-bundle-unchanged",
+      "operation": "install",
+      "description": "Skips a GitHub bundle install when kitup ownership and content hash are unchanged.",
+      "options": {
+        "appId": "example-cli",
+        "githubBundle": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "path": "skills/github-basic",
+          "ref": "main"
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {},
+        "metadata": {
+          "path": "$HOME/.agents/skills/github-basic/.kitup.json",
+          "hash": "from-github-bundle",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "github-basic",
+            "source": "github"
+          }
+        },
+        "github": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "ref": "main",
+          "commit": "abc123",
+          "treeSha": "tree123",
+          "files": {
+            "skills/github-basic/SKILL.md": "---\nname: github-basic\ndescription: GitHub sourced skill.\n---\n"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [
+            {
+              "hostId": "codex",
+              "skillName": "github-basic",
+              "targetDir": "$HOME/.agents/skills/github-basic",
+              "reason": "unchanged"
+            }
+          ],
+          "conflicts": [],
+          "errors": []
+        }
+      }
     }
   ]
 }

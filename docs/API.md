@@ -4,7 +4,7 @@
 
 The core flow is:
 
-1. normalize a bundled skill directory tree
+1. resolve a local directory tree, embedded files, or public GitHub bundle
 2. resolve safe target agent selection for CLI workflows
 3. validate `SKILL.md`
 4. copy, update, skip, or report conflicts
@@ -20,6 +20,7 @@ import {
   detectHosts,
   directoryBundle,
   filesBundle,
+  githubBundle,
   installBundledSkill,
   installFlagError,
   installWorkflowError,
@@ -45,6 +46,21 @@ const report = await installBundledSkill({
 });
 ```
 
+Public GitHub bundle call:
+
+```ts
+const report = await installBundledSkill({
+  appId: "mycli",
+  skillBundle: githubBundle({
+    owner: "acme",
+    repo: "mycli-skills",
+    path: "skills/mycli",
+    ref: "v1.2.3",
+  }),
+  scope: "user",
+});
+```
+
 Implemented functions:
 
 - `loadHostSpec(hostsFile?)`
@@ -56,6 +72,7 @@ Implemented functions:
 - `computeBundleContentHash(bundle, cwd?)`
 - `directoryBundle(path)`
 - `filesBundle(files)`
+- `githubBundle(options)`
 - `parseInstallFlags(flags)`
 - `agentSelectorFromFlags(values)`
 - `parseScopeFlag(value)`
@@ -87,6 +104,21 @@ report, err := kitup.InstallBundledSkill(kitup.InstallOptions{
 })
 ```
 
+Public GitHub bundle call:
+
+```go
+report, err := kitup.InstallBundledSkill(kitup.InstallOptions{
+	AppID: "mycli",
+	SkillBundle: kitup.GitHubBundle(kitup.GitHubBundleOptions{
+		Owner: "acme",
+		Repo:  "mycli-skills",
+		Path:  "skills/mycli",
+		Ref:   "v1.2.3",
+	}),
+	Scope: kitup.UserScope,
+})
+```
+
 Implemented functions:
 
 - `LoadHostSpec(hostsFile string)`
@@ -99,6 +131,7 @@ Implemented functions:
 - `DirectoryBundle(path)`
 - `FSBundle(fsys, root)`
 - `FilesBundle(files)`
+- `GitHubBundle(opts)`
 - `ParseInstallFlags(flags)`
 - `AgentSelectorFromFlags(values)`
 - `ParseScopeFlag(value)`
@@ -133,6 +166,23 @@ let report = kitup::install_bundled_skill(&kitup::InstallOptions {
 })?;
 ```
 
+Public GitHub bundle call:
+
+```rust
+let report = kitup::install_bundled_skill(&kitup::InstallOptions {
+    base: kitup::BaseOptions::default(),
+    app_id: "mycli".to_string(),
+    skill_bundle: kitup::github_bundle(kitup::GitHubBundleOptions {
+        owner: "acme".to_string(),
+        repo: "mycli-skills".to_string(),
+        path: "skills/mycli".to_string(),
+        ref_name: "v1.2.3".to_string(),
+    }),
+    scope: kitup::Scope::User,
+    agents: kitup::AgentSelector::Auto,
+})?;
+```
+
 Implemented functions:
 
 - `load_host_spec(hosts_file)`
@@ -144,6 +194,7 @@ Implemented functions:
 - `compute_bundle_content_hash(bundle)`
 - `directory_bundle(path)`
 - `files_bundle(files)`
+- `github_bundle(options)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`
 - `parse_scope_flag(value, errors)`
@@ -163,12 +214,20 @@ Implemented functions:
 Install options use the same concepts across languages:
 
 - `appId` / `AppID` / `app_id`: owner id written to `.kitup.json`
-- `skillBundle` / `SkillBundle` / `skill_bundle`: bundled skill directory tree source
+- `skillBundle` / `SkillBundle` / `skill_bundle`: local directory, embedded files, or public GitHub bundle
 - `scope`: `user` or `project`
 - `agents`: `"auto"`, `"*"`, or explicit host ids
 - `home`, `cwd`, `hostsFile`: optional test and embedding overrides
 
-Bundle sources must use root-relative POSIX paths. SDKs reject empty paths, absolute paths, `..`, duplicate files, and backslash paths. SDKs exclude `.kitup.json`, `.git`, `.DS_Store`, swap files, and editor backups before validation, hashing, and copy.
+Bundle file paths must use root-relative POSIX paths. SDKs reject empty paths, absolute paths, `..`, duplicate files, and backslash paths. SDKs exclude `.kitup.json`, `.git`, `.DS_Store`, swap files, and editor backups before validation, hashing, and copy.
+
+The first non-local bundle constructor is GitHub only:
+
+- TypeScript: `githubBundle({ owner, repo, path, ref })`
+- Go: `GitHubBundle(GitHubBundleOptions{Owner, Repo, Path, Ref})`
+- Rust: `github_bundle(GitHubBundleOptions { owner, repo, path, ref_name })`
+
+GitHub bundle resolution downloads only files under the configured directory path, requires `SKILL.md` at that bundle root, records the requested ref and resolved commit, and writes GitHub provenance into `.kitup.json`. It does not search GitHub, install dependencies, execute scripts, handle private auth, or install whole repositories by default.
 
 The embedding CLI owns command names and framework attachment. `kitup` owns standard install flag semantics, selector mapping, user-facing workflow text, summary rendering, confirmation, dry-run planning, workflow exit classification, and execution. For user-facing commands, call `runBundledSkillInstall` / `RunBundledSkillInstall` / `run_bundled_skill_install` with values from the shared flag parsing helpers.
 

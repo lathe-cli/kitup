@@ -1,8 +1,8 @@
 # kitup
 
-Shared installer SDK for bundled Agent Skills.
+Shared installer SDK for bundled and public GitHub Agent Skills.
 
-CLI authors ship a skill with their tool. `kitup` models that bundled skill as a directory tree, resolves safe agent targets, validates `SKILL.md`, copies the full tree into the right host directories, and writes ownership metadata so updates stay safe.
+CLI authors ship or point to a skill. `kitup` models that skill as a directory tree, resolves safe agent targets, validates `SKILL.md`, copies the full tree into the right host directories, and writes ownership metadata so updates stay safe.
 
 ```text
 mycli skill install
@@ -17,7 +17,7 @@ mycli skill install
 - resolve user and project skill directories
 - resolve safe CLI install selection before writing
 - validate bundled skills
-- install from a local directory or embedded bundle tree
+- install from a local directory, embedded bundle tree, or public GitHub bundle directory
 - copy, update, and uninstall kitup-owned installs
 - refuse unsafe overwrite conflicts
 - return structured install reports
@@ -26,6 +26,7 @@ mycli skill install
 
 - not a skill marketplace
 - not a remote registry
+- not a private GitHub auth client
 - not a replacement for user-facing skill discovery tools
 
 ## Usage
@@ -96,6 +97,26 @@ await runBundledSkillInstall({
   agents: ["codex"],
 });
 ```
+
+For public GitHub directories, configure the GitHub bundle in the embedding CLI. The user-facing install command stays the same:
+
+```ts
+import { githubBundle, runBundledSkillInstall } from "@kitup/sdk";
+
+await runBundledSkillInstall({
+  appId: "mycli",
+  skillBundle: githubBundle({
+    owner: "acme",
+    repo: "mycli-skills",
+    path: "skills/mycli",
+    ref: "v1.2.3",
+  }),
+  scope: "user",
+  agents: ["codex"],
+});
+```
+
+Go, Rust, and Cobra use the same `skillBundle` shape; see [API](docs/API.md) for language-specific constructors.
 
 ### Go
 

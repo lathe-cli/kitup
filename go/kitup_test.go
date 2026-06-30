@@ -3,6 +3,8 @@ package kitup
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -183,6 +185,9 @@ func setupGiven(t *testing.T, tc goldenCase, home, workspace string) {
 	if meta, ok := tc.Given["metadata"].(map[string]any); ok {
 		writeMetadataFixture(t, tc, home, workspace, meta)
 	}
+	if github, ok := tc.Given["github"].(map[string]any); ok {
+		startGitHubFixture(t, github)
+	}
 }
 
 func assertExpectedFiles(t *testing.T, tc goldenCase, home, workspace string) {
@@ -209,16 +214,7 @@ func assertExpectedMetadata(t *testing.T, tc goldenCase, home, workspace string)
 	for key, value := range meta["fields"].(map[string]any) {
 		equal(t, actual[key], value)
 	}
-	hash := meta["hash"].(string)
-	if hash == "from-skill-bundle-dir" {
-		var err error
-		hash, err = ComputeBundleContentHash(DirectoryBundle(repoPathFromCase(tc.Options["skillBundleDir"].(string))))
-		must(t, err)
-	} else if hash == "from-skill-files" {
-		var err error
-		hash, err = ComputeBundleContentHash(FilesBundle(skillFiles(tc.Options["skillFiles"].([]any))))
-		must(t, err)
-	}
+	hash := expectedBundleHash(t, tc, meta["hash"].(string))
 	equal(t, actual["hash"], hash)
 }
 
@@ -242,18 +238,32 @@ func assertExpectedWriteCounts(t *testing.T, tc goldenCase, report any, home, wo
 }
 
 func writeMetadataFixture(t *testing.T, tc goldenCase, home, workspace string, meta map[string]any) {
-	hash := meta["hash"].(string)
-	if hash == "from-skill-bundle-dir" {
-		var err error
-		hash, err = ComputeBundleContentHash(DirectoryBundle(caseSkillBundleDir(tc)))
-		must(t, err)
-	}
+	hash := expectedBundleHash(t, tc, meta["hash"].(string))
 	fields := map[string]any{}
 	for key, value := range meta["fields"].(map[string]any) {
 		fields[key] = value
 	}
 	fields["hash"] = hash
 	writeFixtureFile(t, expandString(meta["path"].(string), home, workspace), fields)
+}
+
+func expectedBundleHash(t *testing.T, tc goldenCase, marker string) string {
+	switch marker {
+	case "from-skill-bundle-dir":
+		hash, err := ComputeBundleContentHash(DirectoryBundle(caseSkillBundleDir(tc)))
+		must(t, err)
+		return hash
+	case "from-skill-files":
+		hash, err := ComputeBundleContentHash(FilesBundle(skillFiles(tc.Options["skillFiles"].([]any))))
+		must(t, err)
+		return hash
+	case "from-github-bundle":
+		hash, err := ComputeBundleContentHash(FilesBundle(githubSkillFiles(tc)))
+		must(t, err)
+		return hash
+	default:
+		return marker
+	}
 }
 
 func assertSelection(t *testing.T, actual, expected map[string]any) {
@@ -344,6 +354,14 @@ func skillBundleFromOptions(opts map[string]any) SkillBundle {
 	if dir, ok := opts["skillBundleDir"].(string); ok {
 		return DirectoryBundle(repoPathFromCase(dir))
 	}
+	if bundle, ok := opts["githubBundle"].(map[string]any); ok {
+		return GitHubBundle(GitHubBundleOptions{
+			Owner: bundle["owner"].(string),
+			Repo:  bundle["repo"].(string),
+			Path:  bundle["path"].(string),
+			Ref:   bundle["ref"].(string),
+		})
+	}
 	return SkillBundle{}
 }
 
@@ -357,6 +375,65 @@ func skillFiles(values []any) []SkillFile {
 		})
 	}
 	return files
+}
+
+func githubSkillFiles(tc goldenCase) []SkillFile {
+	bundle := tc.Options["githubBundle"].(map[string]any)
+	root := strings.Trim(bundle["path"].(string), "/") + "/"
+	github := tc.Given["github"].(map[string]any)
+	rawFiles := github["files"].(map[string]any)
+	files := []SkillFile{}
+	for path, contents := range rawFiles {
+		if strings.HasPrefix(path, root) {
+			files = append(files, SkillFile{Path: strings.TrimPrefix(path, root), Contents: []byte(contents.(string))})
+		}
+	}
+	return files
+}
+
+func startGitHubFixture(t *testing.T, github map[string]any) {
+	owner := github["owner"].(string)
+	repo := github["repo"].(string)
+	ref := github["ref"].(string)
+	commit := github["commit"].(string)
+	treeSha := github["treeSha"].(string)
+	files := github["files"].(map[string]any)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/" + owner + "/" + repo + "/commits/" + ref:
+			writeResponseJSON(t, w, map[string]any{"sha": commit, "commit": map[string]any{"tree": map[string]any{"sha": treeSha}}})
+		case "/repos/" + owner + "/" + repo + "/git/trees/" + treeSha:
+			tree := []map[string]string{}
+			for path := range files {
+				mode := "100644"
+				if strings.HasSuffix(path, ".sh") {
+					mode = "100755"
+				}
+				tree = append(tree, map[string]string{"path": path, "type": "blob", "mode": mode})
+			}
+			writeResponseJSON(t, w, map[string]any{"tree": tree})
+		default:
+			prefix := "/" + owner + "/" + repo + "/" + commit + "/"
+			if strings.HasPrefix(r.URL.Path, prefix) {
+				path := strings.TrimPrefix(r.URL.Path, prefix)
+				if contents, ok := files[path]; ok {
+					_, _ = w.Write([]byte(contents.(string)))
+					return
+				}
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	t.Setenv("KITUP_GITHUB_API_BASE_URL", server.URL)
+	t.Setenv("KITUP_GITHUB_RAW_BASE_URL", server.URL)
+	t.Cleanup(server.Close)
+}
+
+func writeResponseJSON(t *testing.T, w http.ResponseWriter, value any) {
+	w.Header().Set("content-type", "application/json")
+	data, err := json.Marshal(value)
+	must(t, err)
+	_, _ = w.Write(data)
 }
 
 func boolValue(value any) bool {

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {
@@ -177,6 +177,15 @@ pub struct SkillFile {
 pub enum SkillBundle {
     Directory(PathBuf),
     Files(Vec<SkillFile>),
+    GitHub(GitHubBundleOptions),
+}
+
+#[derive(Clone, Debug)]
+pub struct GitHubBundleOptions {
+    pub owner: String,
+    pub repo: String,
+    pub path: String,
+    pub ref_name: String,
 }
 
 pub fn directory_bundle(path: impl Into<PathBuf>) -> SkillBundle {
@@ -185,6 +194,10 @@ pub fn directory_bundle(path: impl Into<PathBuf>) -> SkillBundle {
 
 pub fn files_bundle(files: Vec<SkillFile>) -> SkillBundle {
     SkillBundle::Files(files)
+}
+
+pub fn github_bundle(options: GitHubBundleOptions) -> SkillBundle {
+    SkillBundle::GitHub(options)
 }
 
 #[derive(Clone, Debug)]
@@ -298,6 +311,14 @@ struct BundleFile {
 struct NormalizedSkillBundle {
     files: Vec<BundleFile>,
     by_path: BTreeMap<String, BundleFile>,
+}
+
+#[derive(Clone, Debug)]
+struct BundleMetadata {
+    source: String,
+    source_id: Option<String>,
+    version: Option<String>,
+    provenance: BTreeMap<String, String>,
 }
 
 pub fn parse_install_flags(flags: InstallFlagValues) -> ParsedInstallFlags {
@@ -878,11 +899,16 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Uninsta
 }
 
 fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallReport> {
-    let bundle = match read_skill_bundle(&options.skill_bundle) {
-        Ok(bundle) => bundle,
+    let (bundle, bundle_metadata) = match resolve_skill_bundle(&options.skill_bundle) {
+        Ok(value) => value,
         Err(_) => {
+            let reason = if matches!(options.skill_bundle, SkillBundle::GitHub(_)) {
+                "bundle-resolve-failed"
+            } else {
+                "invalid-skill-bundle"
+            };
             return Ok(install_report(vec![json!({
-                "reason": "invalid-skill-bundle"
+                "reason": reason
             })]));
         }
     };
@@ -908,6 +934,7 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                         &options.app_id,
                         &skill_name,
                         &hash,
+                        &bundle_metadata,
                     )?;
                 }
                 report.installed.push(result);
@@ -927,6 +954,7 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                         &options.app_id,
                         &skill_name,
                         &hash,
+                        &bundle_metadata,
                     )?;
                 }
                 report.updated.push(result);
@@ -948,10 +976,11 @@ fn copy_managed_skill(
     app_id: &str,
     skill_name: &str,
     hash: &str,
+    bundle_metadata: &BundleMetadata,
 ) -> io::Result<()> {
     let _ = fs::remove_dir_all(target_dir);
     copy_skill_bundle(bundle, target_dir)?;
-    write_metadata(target_dir, app_id, skill_name, hash)
+    write_metadata(target_dir, app_id, skill_name, hash, bundle_metadata)
 }
 
 fn replace_managed_skill(
@@ -960,6 +989,7 @@ fn replace_managed_skill(
     app_id: &str,
     skill_name: &str,
     hash: &str,
+    bundle_metadata: &BundleMetadata,
 ) -> io::Result<()> {
     let suffix = format!(
         ".kitup-{}",
@@ -972,7 +1002,7 @@ fn replace_managed_skill(
     let backup = PathBuf::from(format!("{}{}-backup", target_dir.display(), suffix));
     let _ = fs::remove_dir_all(&tmp);
     copy_skill_bundle(bundle, &tmp)?;
-    write_metadata(&tmp, app_id, skill_name, hash)?;
+    write_metadata(&tmp, app_id, skill_name, hash, bundle_metadata)?;
     fs::rename(target_dir, &backup)?;
     if let Err(error) = fs::rename(&tmp, target_dir) {
         let _ = fs::remove_dir_all(&tmp);
@@ -999,14 +1029,30 @@ fn copy_skill_bundle(bundle: &NormalizedSkillBundle, dest: &Path) -> io::Result<
     Ok(())
 }
 
-fn write_metadata(target_dir: &Path, app_id: &str, skill_name: &str, hash: &str) -> io::Result<()> {
-    let data = serde_json::to_vec_pretty(&json!({
+fn write_metadata(
+    target_dir: &Path,
+    app_id: &str,
+    skill_name: &str,
+    hash: &str,
+    bundle_metadata: &BundleMetadata,
+) -> io::Result<()> {
+    let mut value = json!({
         "schemaVersion": 1,
         "appId": app_id,
         "skillName": skill_name,
-        "source": "bundled",
+        "source": bundle_metadata.source,
         "hash": hash
-    }))?;
+    });
+    if let Some(source_id) = &bundle_metadata.source_id {
+        value["sourceId"] = json!(source_id);
+    }
+    if let Some(version) = &bundle_metadata.version {
+        value["version"] = json!(version);
+    }
+    if !bundle_metadata.provenance.is_empty() {
+        value["provenance"] = json!(bundle_metadata.provenance);
+    }
+    let data = serde_json::to_vec_pretty(&value)?;
     let mut data = data;
     data.push(b'\n');
     fs::write(target_dir.join(".kitup.json"), data)
@@ -1358,10 +1404,180 @@ fn valid_skill_name(name: &str) -> bool {
     true
 }
 
+fn resolve_skill_bundle(
+    bundle: &SkillBundle,
+) -> io::Result<(NormalizedSkillBundle, BundleMetadata)> {
+    match bundle {
+        SkillBundle::GitHub(options) => resolve_github_bundle(options),
+        _ => Ok((
+            read_skill_bundle(bundle)?,
+            BundleMetadata {
+                source: "bundled".to_string(),
+                source_id: None,
+                version: None,
+                provenance: BTreeMap::new(),
+            },
+        )),
+    }
+}
+
+fn resolve_github_bundle(
+    options: &GitHubBundleOptions,
+) -> io::Result<(NormalizedSkillBundle, BundleMetadata)> {
+    let root = trim_github_path(&options.path);
+    if options.owner.is_empty()
+        || options.repo.is_empty()
+        || root.is_empty()
+        || options.ref_name.is_empty()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid github bundle",
+        ));
+    }
+    let api_base = env_base_url("KITUP_GITHUB_API_BASE_URL", "https://api.github.com");
+    let raw_base = env_base_url(
+        "KITUP_GITHUB_RAW_BASE_URL",
+        "https://raw.githubusercontent.com",
+    );
+    let commit: Value = get_json(&format!(
+        "{}/repos/{}/{}/commits/{}",
+        api_base,
+        escape_path_part(&options.owner),
+        escape_path_part(&options.repo),
+        escape_path_part(&options.ref_name)
+    ))?;
+    let resolved_commit = commit["sha"].as_str().unwrap_or("").to_string();
+    let tree_sha = commit["commit"]["tree"]["sha"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    if resolved_commit.is_empty() || tree_sha.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid github commit",
+        ));
+    }
+    let tree: Value = get_json(&format!(
+        "{}/repos/{}/{}/git/trees/{}?recursive=1",
+        api_base,
+        escape_path_part(&options.owner),
+        escape_path_part(&options.repo),
+        escape_path_part(&tree_sha)
+    ))?;
+    let prefix = format!("{root}/");
+    let mut files = Vec::new();
+    for item in tree["tree"].as_array().into_iter().flatten() {
+        let path = item["path"].as_str().unwrap_or("");
+        if item["type"].as_str() != Some("blob") || !path.starts_with(&prefix) {
+            continue;
+        }
+        let contents = get_bytes(&format!(
+            "{}/{}/{}/{}/{}",
+            raw_base,
+            escape_path_part(&options.owner),
+            escape_path_part(&options.repo),
+            escape_path_part(&resolved_commit),
+            escape_path(path)
+        ))?;
+        let mode = if item["mode"].as_str() == Some("100755") {
+            Some(0o755)
+        } else {
+            Some(0o644)
+        };
+        files.push(SkillFile {
+            path: path.strip_prefix(&prefix).unwrap().to_string(),
+            contents,
+            mode,
+        });
+    }
+    if files.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "github bundle path not found",
+        ));
+    }
+    let mut provenance = BTreeMap::new();
+    provenance.insert("owner".to_string(), options.owner.clone());
+    provenance.insert("repo".to_string(), options.repo.clone());
+    provenance.insert("path".to_string(), root.clone());
+    provenance.insert("ref".to_string(), options.ref_name.clone());
+    provenance.insert("resolvedCommit".to_string(), resolved_commit);
+    Ok((
+        normalize_skill_files(files)?,
+        BundleMetadata {
+            source: "github".to_string(),
+            source_id: Some(format!(
+                "github:{}/{}/{}",
+                options.owner, options.repo, root
+            )),
+            version: Some(options.ref_name.clone()),
+            provenance,
+        },
+    ))
+}
+
+fn env_base_url(name: &str, fallback: &str) -> String {
+    std::env::var(name)
+        .unwrap_or_else(|_| fallback.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn get_json(url: &str) -> io::Result<Value> {
+    serde_json::from_slice(&get_bytes(url)?).map_err(io::Error::other)
+}
+
+fn get_bytes(url: &str) -> io::Result<Vec<u8>> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(30))
+        .build();
+    let response = agent
+        .get(url)
+        .set("User-Agent", "kitup")
+        .call()
+        .map_err(io::Error::other)?;
+    if response.status() < 200 || response.status() > 299 {
+        return Err(io::Error::other(format!("github request failed: {url}")));
+    }
+    let mut reader = response.into_reader();
+    let mut data = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut data)?;
+    Ok(data)
+}
+
+fn trim_github_path(value: &str) -> String {
+    value.trim_matches('/').to_string()
+}
+
+fn escape_path(value: &str) -> String {
+    value
+        .split('/')
+        .map(escape_path_part)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn escape_path_part(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 fn read_skill_bundle(bundle: &SkillBundle) -> io::Result<NormalizedSkillBundle> {
     match bundle {
         SkillBundle::Directory(root) => normalize_skill_files(read_directory_bundle_files(root)?),
         SkillBundle::Files(files) => normalize_skill_files(files.clone()),
+        SkillBundle::GitHub(options) => {
+            let (bundle, _) = resolve_github_bundle(options)?;
+            Ok(bundle)
+        }
     }
 }
 
