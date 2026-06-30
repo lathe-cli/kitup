@@ -246,4 +246,8 @@ Uninstall reports include:
 - `conflicts`
 - `errors`
 
+TypeScript returns typed report objects. Go exposes `InstallReport`, `UninstallReport`, `TargetResult`, `TargetStatus`, and `ReportError`. Rust exposes `InstallReport`, `UninstallReport`, `TargetResult`, `TargetStatus`, and `ReportError`.
+
+The serialized JSON report shape is the same across TypeScript, Go, and Rust. `installed`, `updated`, and `removed` contain target results. `skipped` and `conflicts` contain target results plus `reason`.
+
 Conflict is the safe default. A target directory without matching `.kitup.json` ownership metadata is reported as a conflict, not overwritten.

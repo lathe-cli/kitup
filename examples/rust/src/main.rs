@@ -12,9 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     println!("{}", serde_json::to_string(&report)?);
-    if !report["errors"].as_array().unwrap().is_empty()
-        || !report["conflicts"].as_array().unwrap().is_empty()
-    {
+    if !report.errors.is_empty() || !report.conflicts.is_empty() {
         std::process::exit(1);
     }
     Ok(())

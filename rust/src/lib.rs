@@ -196,6 +196,62 @@ pub struct TargetGroup {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TargetResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub host_ids: Vec<String>,
+    pub skill_name: String,
+    pub target_dir: PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetStatus {
+    #[serde(flatten)]
+    pub target: TargetResult,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportError {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallReport {
+    pub installed: Vec<TargetResult>,
+    pub updated: Vec<TargetResult>,
+    pub skipped: Vec<TargetStatus>,
+    pub conflicts: Vec<TargetStatus>,
+    pub errors: Vec<ReportError>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UninstallReport {
+    pub removed: Vec<TargetResult>,
+    pub skipped: Vec<TargetStatus>,
+    pub conflicts: Vec<TargetStatus>,
+    pub errors: Vec<ReportError>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstallSelection {
     pub action: String,
     pub selected_host_ids: Vec<String>,
@@ -210,8 +266,8 @@ pub struct InstallSelection {
 pub struct InstallWorkflowReport {
     pub selection: InstallSelection,
     pub scope: String,
-    pub plan: Value,
-    pub report: Value,
+    pub plan: InstallReport,
+    pub report: InstallReport,
     pub canceled: bool,
     pub dry_run: bool,
 }
@@ -309,10 +365,10 @@ pub fn classify_install_workflow_exit(report: &InstallWorkflowReport) -> Install
     if !report.selection.errors.is_empty() {
         return install_workflow_exit(false, "selection-error", INSTALL_UX.selection_error);
     }
-    if report_count(&report.report, "conflicts") > 0 {
+    if !report.report.conflicts.is_empty() {
         return install_workflow_exit(false, "conflict", INSTALL_UX.conflict);
     }
-    if report_count(&report.report, "errors") > 0 {
+    if !report.report.errors.is_empty() {
         return install_workflow_exit(false, "error", INSTALL_UX.failed);
     }
     install_workflow_exit(true, "ok", "")
@@ -657,11 +713,11 @@ fn content_hash(bundle: &NormalizedSkillBundle) -> String {
     format!("sha256:{:x}", hash.finalize())
 }
 
-pub fn install_bundled_skill(options: &InstallOptions) -> io::Result<Value> {
+pub fn install_bundled_skill(options: &InstallOptions) -> io::Result<InstallReport> {
     install_or_plan(options, true)
 }
 
-pub fn plan_bundled_skill(options: &InstallOptions) -> io::Result<Value> {
+pub fn plan_bundled_skill(options: &InstallOptions) -> io::Result<InstallReport> {
     install_or_plan(options, false)
 }
 
@@ -792,11 +848,11 @@ pub fn run_bundled_skill_install_with_io<R: BufRead, W: Write>(
     })
 }
 
-pub fn update_bundled_skill(options: &InstallOptions) -> io::Result<Value> {
+pub fn update_bundled_skill(options: &InstallOptions) -> io::Result<InstallReport> {
     install_bundled_skill(options)
 }
 
-pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Value> {
+pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<UninstallReport> {
     let (targets, errors, _) = resolve_install_targets(
         &options.base,
         &options.agents,
@@ -807,27 +863,21 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Value> 
     for target in targets {
         let result = target_result(&target);
         match read_metadata(&target.target_dir) {
-            MetadataState::Missing => {
-                push_report(&mut report, "skipped", with_reason(result, "missing"))
+            MetadataState::Missing => report.skipped.push(with_reason(result, "missing")),
+            MetadataState::Unmanaged => report.conflicts.push(with_reason(result, "unmanaged")),
+            MetadataState::Managed(meta) if meta.app_id != options.app_id => {
+                report.conflicts.push(with_reason(result, "owner-mismatch"))
             }
-            MetadataState::Unmanaged => {
-                push_report(&mut report, "conflicts", with_reason(result, "unmanaged"))
-            }
-            MetadataState::Managed(meta) if meta.app_id != options.app_id => push_report(
-                &mut report,
-                "conflicts",
-                with_reason(result, "owner-mismatch"),
-            ),
             MetadataState::Managed(_) => {
                 fs::remove_dir_all(&target.target_dir)?;
-                push_report(&mut report, "removed", result);
+                report.removed.push(result);
             }
         }
     }
     Ok(report)
 }
 
-fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<Value> {
+fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallReport> {
     let bundle = match read_skill_bundle(&options.skill_bundle) {
         Ok(bundle) => bundle,
         Err(_) => {
@@ -860,18 +910,14 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<Value> {
                         &hash,
                     )?;
                 }
-                push_report(&mut report, "installed", result);
+                report.installed.push(result);
             }
-            MetadataState::Unmanaged => {
-                push_report(&mut report, "conflicts", with_reason(result, "unmanaged"))
+            MetadataState::Unmanaged => report.conflicts.push(with_reason(result, "unmanaged")),
+            MetadataState::Managed(meta) if meta.app_id != options.app_id => {
+                report.conflicts.push(with_reason(result, "owner-mismatch"))
             }
-            MetadataState::Managed(meta) if meta.app_id != options.app_id => push_report(
-                &mut report,
-                "conflicts",
-                with_reason(result, "owner-mismatch"),
-            ),
             MetadataState::Managed(meta) if meta.hash == hash => {
-                push_report(&mut report, "skipped", with_reason(result, "unchanged"))
+                report.skipped.push(with_reason(result, "unchanged"))
             }
             MetadataState::Managed(_) => {
                 if write {
@@ -883,7 +929,7 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<Value> {
                         &hash,
                     )?;
                 }
-                push_report(&mut report, "updated", result);
+                report.updated.push(result);
             }
         }
     }
@@ -979,47 +1025,47 @@ fn read_metadata(target_dir: &Path) -> MetadataState {
     }
 }
 
-fn target_result(target: &TargetGroup) -> Value {
+fn target_result(target: &TargetGroup) -> TargetResult {
     if target.host_ids.len() == 1 {
-        json!({
-            "hostId": target.host_ids[0],
-            "skillName": target.skill_name,
-            "targetDir": target.target_dir
-        })
+        TargetResult {
+            host_id: Some(target.host_ids[0].clone()),
+            host_ids: vec![],
+            skill_name: target.skill_name.clone(),
+            target_dir: target.target_dir.clone(),
+        }
     } else {
-        json!({
-            "hostIds": target.host_ids,
-            "skillName": target.skill_name,
-            "targetDir": target.target_dir
-        })
+        TargetResult {
+            host_id: None,
+            host_ids: target.host_ids.clone(),
+            skill_name: target.skill_name.clone(),
+            target_dir: target.target_dir.clone(),
+        }
     }
 }
 
-fn with_reason(mut value: Value, reason: &str) -> Value {
-    value["reason"] = json!(reason);
-    value
+fn with_reason(target: TargetResult, reason: &str) -> TargetStatus {
+    TargetStatus {
+        target,
+        reason: reason.to_string(),
+    }
 }
 
-fn install_report(errors: Vec<Value>) -> Value {
-    json!({
-        "installed": [],
-        "updated": [],
-        "skipped": [],
-        "conflicts": [],
-        "errors": errors
-    })
+fn install_report(errors: Vec<Value>) -> InstallReport {
+    InstallReport {
+        installed: vec![],
+        updated: vec![],
+        skipped: vec![],
+        conflicts: vec![],
+        errors: report_errors(errors),
+    }
 }
 
-fn has_visible_install_plan(report: &Value) -> bool {
-    report_count(report, "installed")
-        + report_count(report, "updated")
-        + report_count(report, "conflicts")
-        + report_count(report, "errors")
-        > 0
+fn has_visible_install_plan(report: &InstallReport) -> bool {
+    report.installed.len() + report.updated.len() + report.conflicts.len() + report.errors.len() > 0
 }
 
-fn has_install_writes(report: &Value) -> bool {
-    report_count(report, "installed") + report_count(report, "updated") > 0
+fn has_install_writes(report: &InstallReport) -> bool {
+    report.installed.len() + report.updated.len() > 0
 }
 
 fn resolve_workflow_scope<R: BufRead, W: Write>(
@@ -1163,41 +1209,26 @@ fn read_prompt_line<R: BufRead>(input: &mut R) -> io::Result<String> {
     Ok(line.trim_end_matches(['\r', '\n']).to_string())
 }
 
-fn render_install_summary<W: Write>(output: &mut W, report: &Value) -> io::Result<()> {
-    for item in report["installed"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .chain(report["updated"].as_array().into_iter().flatten())
-    {
+fn render_install_summary<W: Write>(output: &mut W, report: &InstallReport) -> io::Result<()> {
+    for item in report.installed.iter().chain(&report.updated) {
         for host in summary_hosts(item) {
             writeln!(
                 output,
                 "  - {} -> {} ({})",
-                item["skillName"].as_str().unwrap_or(""),
-                item["targetDir"].as_str().unwrap_or(""),
-                host
+                item.skill_name,
+                item.target_dir.display(),
+                host,
             )?;
         }
     }
     Ok(())
 }
 
-fn summary_hosts(item: &Value) -> Vec<String> {
-    if let Some(host) = item["hostId"].as_str() {
-        return vec![host.to_string()];
+fn summary_hosts(item: &TargetResult) -> Vec<String> {
+    if let Some(host) = &item.host_id {
+        return vec![host.clone()];
     }
-    item["hostIds"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(String::from)
-        .collect()
-}
-
-fn report_count(report: &Value, key: &str) -> usize {
-    report[key].as_array().map(Vec::len).unwrap_or(0)
+    item.host_ids.clone()
 }
 
 fn render_selection_errors<W: Write>(
@@ -1222,17 +1253,32 @@ fn hosts_by_id(hosts: &[Host], ids: &[String]) -> Vec<Host> {
         .collect()
 }
 
-fn uninstall_report(errors: Vec<Value>) -> Value {
-    json!({
-        "removed": [],
-        "skipped": [],
-        "conflicts": [],
-        "errors": errors
-    })
+fn uninstall_report(errors: Vec<Value>) -> UninstallReport {
+    UninstallReport {
+        removed: vec![],
+        skipped: vec![],
+        conflicts: vec![],
+        errors: report_errors(errors),
+    }
 }
 
-fn push_report(report: &mut Value, key: &str, value: Value) {
-    report[key].as_array_mut().unwrap().push(value);
+fn report_errors(errors: Vec<Value>) -> Vec<ReportError> {
+    errors
+        .into_iter()
+        .map(|error| ReportError {
+            agent: string_value(&error, "agent"),
+            flag: string_value(&error, "flag"),
+            host_id: string_value(&error, "hostId"),
+            reason: string_value(&error, "reason").unwrap_or_default(),
+            scope: string_value(&error, "scope"),
+            skill_name: string_value(&error, "skillName"),
+            value: string_value(&error, "value"),
+        })
+        .collect()
+}
+
+fn string_value(value: &Value, key: &str) -> Option<String> {
+    value.get(key).and_then(Value::as_str).map(String::from)
 }
 
 fn canonical_scope_path(host: &Host, scope: Scope, home: &Path, cwd: &Path) -> Option<PathBuf> {

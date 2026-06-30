@@ -296,19 +296,41 @@ type TargetGroup struct {
 	TargetDir string
 }
 
+type TargetResult struct {
+	HostID    string   `json:"hostId,omitempty"`
+	HostIDs   []string `json:"hostIds,omitempty"`
+	SkillName string   `json:"skillName"`
+	TargetDir string   `json:"targetDir"`
+}
+
+type TargetStatus struct {
+	TargetResult
+	Reason string `json:"reason"`
+}
+
+type ReportError struct {
+	Agent     string `json:"agent,omitempty"`
+	Flag      string `json:"flag,omitempty"`
+	HostID    string `json:"hostId,omitempty"`
+	Reason    string `json:"reason"`
+	Scope     Scope  `json:"scope,omitempty"`
+	SkillName string `json:"skillName,omitempty"`
+	Value     string `json:"value,omitempty"`
+}
+
 type InstallReport struct {
-	Installed []map[string]any `json:"installed"`
-	Updated   []map[string]any `json:"updated"`
-	Skipped   []map[string]any `json:"skipped"`
-	Conflicts []map[string]any `json:"conflicts"`
-	Errors    []map[string]any `json:"errors"`
+	Installed []TargetResult `json:"installed"`
+	Updated   []TargetResult `json:"updated"`
+	Skipped   []TargetStatus `json:"skipped"`
+	Conflicts []TargetStatus `json:"conflicts"`
+	Errors    []ReportError  `json:"errors"`
 }
 
 type UninstallReport struct {
-	Removed   []map[string]any `json:"removed"`
-	Skipped   []map[string]any `json:"skipped"`
-	Conflicts []map[string]any `json:"conflicts"`
-	Errors    []map[string]any `json:"errors"`
+	Removed   []TargetResult `json:"removed"`
+	Skipped   []TargetStatus `json:"skipped"`
+	Conflicts []TargetStatus `json:"conflicts"`
+	Errors    []ReportError  `json:"errors"`
 }
 
 type InstallSelection struct {
@@ -729,10 +751,7 @@ func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
 	if err != nil {
 		return UninstallReport{}, err
 	}
-	if errs == nil {
-		errs = []map[string]any{}
-	}
-	report := UninstallReport{Removed: []map[string]any{}, Skipped: []map[string]any{}, Conflicts: []map[string]any{}, Errors: errs}
+	report := emptyUninstallReport(errs)
 	for _, target := range targets {
 		result := targetResult(target)
 		meta, present, managed := readMetadata(target.TargetDir)
@@ -876,32 +895,63 @@ func readMetadata(targetDir string) (metadata, bool, bool) {
 	return meta, true, true
 }
 
-func targetResult(target TargetGroup) map[string]any {
-	result := map[string]any{"skillName": target.SkillName, "targetDir": target.TargetDir}
+func targetResult(target TargetGroup) TargetResult {
+	result := TargetResult{SkillName: target.SkillName, TargetDir: target.TargetDir}
 	if len(target.HostIDs) == 1 {
-		result["hostId"] = target.HostIDs[0]
+		result.HostID = target.HostIDs[0]
 	} else {
-		result["hostIds"] = target.HostIDs
+		result.HostIDs = target.HostIDs
 	}
 	return result
 }
 
-func withReason(result map[string]any, reason string) map[string]any {
-	result["reason"] = reason
-	return result
+func withReason(result TargetResult, reason string) TargetStatus {
+	return TargetStatus{TargetResult: result, Reason: reason}
 }
 
 func emptyInstallReport(errs []map[string]any) InstallReport {
-	if errs == nil {
-		errs = []map[string]any{}
-	}
 	return InstallReport{
-		Installed: []map[string]any{},
-		Updated:   []map[string]any{},
-		Skipped:   []map[string]any{},
-		Conflicts: []map[string]any{},
-		Errors:    errs,
+		Installed: []TargetResult{},
+		Updated:   []TargetResult{},
+		Skipped:   []TargetStatus{},
+		Conflicts: []TargetStatus{},
+		Errors:    reportErrors(errs),
 	}
+}
+
+func emptyUninstallReport(errs []map[string]any) UninstallReport {
+	return UninstallReport{
+		Removed:   []TargetResult{},
+		Skipped:   []TargetStatus{},
+		Conflicts: []TargetStatus{},
+		Errors:    reportErrors(errs),
+	}
+}
+
+func reportErrors(errs []map[string]any) []ReportError {
+	if errs == nil {
+		return []ReportError{}
+	}
+	result := make([]ReportError, 0, len(errs))
+	for _, err := range errs {
+		result = append(result, ReportError{
+			Agent:     stringField(err, "agent"),
+			Flag:      stringField(err, "flag"),
+			HostID:    stringField(err, "hostId"),
+			Reason:    stringField(err, "reason"),
+			Scope:     Scope(stringField(err, "scope")),
+			SkillName: stringField(err, "skillName"),
+			Value:     stringField(err, "value"),
+		})
+	}
+	return result
+}
+
+func stringField(value map[string]any, key string) string {
+	if text, ok := value[key].(string); ok {
+		return text
+	}
+	return ""
 }
 
 func hasVisibleInstallPlan(report InstallReport) bool {
@@ -1037,29 +1087,18 @@ func readPromptLine(reader *bufio.Reader) (string, error) {
 }
 
 func renderInstallSummary(out io.Writer, report InstallReport) {
-	for _, item := range append(append([]map[string]any{}, report.Installed...), report.Updated...) {
+	for _, item := range append(append([]TargetResult{}, report.Installed...), report.Updated...) {
 		for _, host := range summaryHosts(item) {
-			fmt.Fprintf(out, "  - %s -> %s (%s)\n", item["skillName"], item["targetDir"], host)
+			fmt.Fprintf(out, "  - %s -> %s (%s)\n", item.SkillName, item.TargetDir, host)
 		}
 	}
 }
 
-func summaryHosts(item map[string]any) []string {
-	if host, ok := item["hostId"].(string); ok {
-		return []string{host}
+func summaryHosts(item TargetResult) []string {
+	if item.HostID != "" {
+		return []string{item.HostID}
 	}
-	hosts := []string{}
-	if values, ok := item["hostIds"].([]string); ok {
-		return values
-	}
-	if values, ok := item["hostIds"].([]any); ok {
-		for _, value := range values {
-			if host, ok := value.(string); ok {
-				hosts = append(hosts, host)
-			}
-		}
-	}
-	return hosts
+	return item.HostIDs
 }
 
 func renderSelectionErrors(out io.Writer, selection InstallSelection) {

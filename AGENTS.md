@@ -19,7 +19,7 @@ The v0.1 product is deliberately small:
 - return structured reports
 - enforce parity through shared golden cases
 
-Do not turn kitup into a marketplace, registry client, package manager, MCP server, GUI, agent runtime integration layer, or arbitrary skill installer. Remote installs, GitHub source installs, marketplace search, plugin systems, `AGENTS.md` mutation, script execution, and symlink-first workflows are outside v0.1 unless the plan and golden cases are changed first.
+Do not turn kitup into a marketplace, registry client, package manager, MCP server, GUI, agent runtime integration layer, or arbitrary skill installer. Remote installs, GitHub source installs, marketplace search, plugin systems, `AGENTS.md` mutation, script execution, and symlink-first workflows are outside v0.1 unless this boundary and golden cases are changed first.
 
 ## Product Promise
 
@@ -47,7 +47,7 @@ Use the live repository state, not memory or aspiration.
 - `scripts/sync-hosts.mjs` refreshes and checks generated host constants.
 - `scripts/check.mjs` is the current parity gate.
 - `docs/host-adapter-contract.md` explains host adapter semantics.
-- `PLAN.md` and `TODO.md` define product direction, but code, schemas, and golden cases are the enforcement layer.
+- `README.md` documents the public product boundary; code, schemas, and golden cases are the enforcement layer.
 
 When docs and executable checks disagree, fix the source of truth or surface the conflict before implementing behavior.
 

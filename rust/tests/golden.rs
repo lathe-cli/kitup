@@ -205,7 +205,10 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
                 case.expected.get("outputContains"),
             );
             if let Some(expected) = case.expected.get("report") {
-                assert_json_eq(&workflow.report, expand_value(expected, home, workspace));
+                assert_json_eq(
+                    &serde_json::to_value(&workflow.report).unwrap(),
+                    expand_value(expected, home, workspace),
+                );
             }
             assert_expected_files(case, home, workspace);
             assert_expected_metadata(case, home, workspace);
@@ -246,13 +249,16 @@ fn run_report_case(
         hosts_file: Some(repo_path("spec/hosts.json")),
     };
     match case.operation.as_str() {
-        "uninstall" => uninstall_bundled_skill(&UninstallOptions {
-            base,
-            app_id: options["appId"].as_str().unwrap().to_string(),
-            skill_name: options["skillName"].as_str().unwrap().to_string(),
-            scope: scope(options["scope"].as_str().unwrap()),
-            agents: agent_selector(&options["agents"]),
-        })
+        "uninstall" => serde_json::to_value(
+            uninstall_bundled_skill(&UninstallOptions {
+                base,
+                app_id: options["appId"].as_str().unwrap().to_string(),
+                skill_name: options["skillName"].as_str().unwrap().to_string(),
+                scope: scope(options["scope"].as_str().unwrap()),
+                agents: agent_selector(&options["agents"]),
+            })
+            .unwrap(),
+        )
         .unwrap(),
         "install" | "update" | "plan" => {
             let options = InstallOptions {
@@ -263,9 +269,9 @@ fn run_report_case(
                 agents: agent_selector(&options["agents"]),
             };
             match case.operation.as_str() {
-                "update" => update_bundled_skill(&options).unwrap(),
-                "plan" => plan_bundled_skill(&options).unwrap(),
-                _ => install_bundled_skill(&options).unwrap(),
+                "update" => serde_json::to_value(update_bundled_skill(&options).unwrap()).unwrap(),
+                "plan" => serde_json::to_value(plan_bundled_skill(&options).unwrap()).unwrap(),
+                _ => serde_json::to_value(install_bundled_skill(&options).unwrap()).unwrap(),
             }
         }
         other => panic!("unsupported operation: {other}"),
