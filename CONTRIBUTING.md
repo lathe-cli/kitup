@@ -6,6 +6,7 @@ Keep changes inside the v0.1 boundary:
 
 - validate local skill directories
 - validate embedded skill directory trees
+- resolve public GitHub skill bundle directory trees
 - detect agent hosts
 - resolve safe CLI install selection
 - run the safe CLI install workflow
@@ -15,7 +16,7 @@ Keep changes inside the v0.1 boundary:
 - return structured reports
 - keep TypeScript, Go, and Rust behavior aligned through golden cases
 
-Do not add marketplace, registry, remote install, script execution, MCP server, GUI, or agent runtime behavior unless the product boundary changes first.
+Do not add marketplace, registry, private remote install, custom provider, script execution, MCP server, GUI, or agent runtime behavior unless the product boundary changes first.
 
 ## Setup
 
@@ -73,7 +74,7 @@ Host support is data-first.
 
 ## SDK Behavior Changes
 
-Every source, selection, or installer behavior needs a golden case in `testdata/cases`.
+Every bundle input, selection, or installer behavior needs a golden case in `testdata/cases`.
 
 Before opening a pull request:
 

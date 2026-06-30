@@ -68,7 +68,16 @@ export interface SkillFile {
 }
 
 export type SkillBundle =
-  { kind: "directory"; path: string } | { kind: "files"; files: SkillFile[] };
+  | { kind: "directory"; path: string }
+  | { kind: "files"; files: SkillFile[] }
+  | { kind: "github"; options: GitHubBundleOptions };
+
+export interface GitHubBundleOptions {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+}
 
 export interface InstallOptions extends BaseOptions {
   appId: string;
@@ -157,7 +166,11 @@ export type UnsupportedScopeError = {
   reason: "unsupported-scope";
 };
 export type SkillError = { reason: SkillInfo["errorCode"] };
-export type TargetError = UnknownHostError | UnsupportedScopeError | SkillError;
+export type BundleError = {
+  reason: "bundle-resolve-failed";
+};
+export type TargetError =
+  UnknownHostError | UnsupportedScopeError | SkillError | BundleError;
 
 export interface InstallReport {
   installed: TargetResult[];
@@ -215,11 +228,13 @@ interface InstallMetadata {
   schemaVersion: 1;
   appId: string;
   skillName: string;
-  source: "bundled";
+  source: "bundled" | "github";
   hash: string;
+  sourceId?: string;
+  version?: string;
+  provenance?: Record<string, string>;
 }
 
-const source = "bundled";
 const defaultAgents: AgentSelector = "auto";
 
 interface BundleFile {
@@ -234,12 +249,23 @@ interface NormalizedSkillBundle {
   byPath: Map<string, BundleFile>;
 }
 
+interface BundleMetadata {
+  source: InstallMetadata["source"];
+  sourceId?: string;
+  version?: string;
+  provenance?: Record<string, string>;
+}
+
 export function directoryBundle(path: string): SkillBundle {
   return { kind: "directory", path };
 }
 
 export function filesBundle(files: SkillFile[]): SkillBundle {
   return { kind: "files", files };
+}
+
+export function githubBundle(options: GitHubBundleOptions): SkillBundle {
+  return { kind: "github", options };
 }
 
 export function parseInstallFlags(
@@ -770,11 +796,118 @@ async function readSkillBundle(
   bundle: SkillBundle,
   cwd = process.cwd(),
 ): Promise<NormalizedSkillBundle> {
+  return (await resolveSkillBundle(bundle, cwd)).bundle;
+}
+
+async function resolveSkillBundle(
+  bundle: SkillBundle,
+  cwd = process.cwd(),
+): Promise<{ bundle: NormalizedSkillBundle; metadata: BundleMetadata }> {
   if (bundle.kind === "directory") {
     const dir = resolvePath(bundle.path, cwd);
-    return normalizeSkillFiles(await readDirectoryBundleFiles(dir), dir);
+    return {
+      bundle: normalizeSkillFiles(await readDirectoryBundleFiles(dir), dir),
+      metadata: { source: "bundled" },
+    };
   }
-  return normalizeSkillFiles(bundle.files);
+  if (bundle.kind === "files") {
+    return {
+      bundle: normalizeSkillFiles(bundle.files),
+      metadata: { source: "bundled" },
+    };
+  }
+  return resolveGitHubBundle(bundle.options);
+}
+
+async function resolveGitHubBundle(
+  options: GitHubBundleOptions,
+): Promise<{ bundle: NormalizedSkillBundle; metadata: BundleMetadata }> {
+  const root = trimGitHubPath(options.path);
+  if (!options.owner || !options.repo || !root || !options.ref) {
+    throw new Error("invalid github bundle");
+  }
+  const apiBase = envBaseUrl(
+    "KITUP_GITHUB_API_BASE_URL",
+    "https://api.github.com",
+  );
+  const rawBase = envBaseUrl(
+    "KITUP_GITHUB_RAW_BASE_URL",
+    "https://raw.githubusercontent.com",
+  );
+  const commit: any = await getJson(
+    `${apiBase}/repos/${encodePathPart(options.owner)}/${encodePathPart(options.repo)}/commits/${encodePathPart(options.ref)}`,
+  );
+  const resolvedCommit = String(commit.sha ?? "");
+  const treeSha = String(commit.commit?.tree?.sha ?? "");
+  if (!resolvedCommit || !treeSha) throw new Error("invalid github commit");
+
+  const tree: any = await getJson(
+    `${apiBase}/repos/${encodePathPart(options.owner)}/${encodePathPart(options.repo)}/git/trees/${encodePathPart(treeSha)}?recursive=1`,
+  );
+  const files: SkillFile[] = [];
+  const prefix = `${root}/`;
+  for (const item of tree.tree ?? []) {
+    const path = String(item.path ?? "");
+    if (item.type !== "blob" || !path.startsWith(prefix)) continue;
+    const relativePath = path.slice(prefix.length);
+    const url = `${rawBase}/${encodePathPart(options.owner)}/${encodePathPart(options.repo)}/${encodePathPart(resolvedCommit)}/${encodePath(path)}`;
+    files.push({
+      path: relativePath,
+      contents: await getBytes(url),
+      mode: item.mode === "100755" ? 0o755 : 0o644,
+    });
+  }
+  if (files.length === 0) throw new Error("github bundle path not found");
+  const bundle = normalizeSkillFiles(files);
+  return {
+    bundle,
+    metadata: {
+      source: "github",
+      sourceId: `github:${options.owner}/${options.repo}/${root}`,
+      version: options.ref,
+      provenance: {
+        owner: options.owner,
+        repo: options.repo,
+        path: root,
+        ref: options.ref,
+        resolvedCommit,
+      },
+    },
+  };
+}
+
+function envBaseUrl(name: string, fallback: string) {
+  return (process.env[name] ?? fallback).replace(/\/+$/, "");
+}
+
+async function getJson(url: string) {
+  const response = await fetch(url, {
+    headers: { "User-Agent": "kitup" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`github request failed: ${url}`);
+  return response.json();
+}
+
+async function getBytes(url: string) {
+  const response = await fetch(url, {
+    headers: { "User-Agent": "kitup" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`github download failed: ${url}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function trimGitHubPath(path: string) {
+  return path.replace(/^\/+|\/+$/g, "");
+}
+
+function encodePath(path: string) {
+  return path.split("/").map(encodePathPart).join("/");
+}
+
+function encodePathPart(part: string) {
+  return encodeURIComponent(part);
 }
 
 async function readDirectoryBundleFiles(
@@ -857,10 +990,21 @@ async function installOrPlan(
 ): Promise<InstallReport> {
   const cwd = options.cwd ?? process.cwd();
   let bundle: NormalizedSkillBundle;
+  let bundleMetadata: BundleMetadata;
   try {
-    bundle = await readSkillBundle(options.skillBundle, cwd);
+    ({ bundle, metadata: bundleMetadata } = await resolveSkillBundle(
+      options.skillBundle,
+      cwd,
+    ));
   } catch {
-    return emptyInstallReport([{ reason: "invalid-skill-bundle" }]);
+    return emptyInstallReport([
+      {
+        reason:
+          options.skillBundle.kind === "github"
+            ? "bundle-resolve-failed"
+            : "invalid-skill-bundle",
+      },
+    ]);
   }
   const skill = validateNormalizedSkill(bundle);
   if (!skill.valid || !skill.skillName) {
@@ -885,6 +1029,7 @@ async function installOrPlan(
           options.appId,
           skill.skillName,
           hash,
+          bundleMetadata,
         );
       }
       report.installed.push(result);
@@ -902,6 +1047,7 @@ async function installOrPlan(
           options.appId,
           skill.skillName,
           hash,
+          bundleMetadata,
         );
       }
       report.updated.push(result);
@@ -955,10 +1101,11 @@ async function copyManagedSkill(
   appId: string,
   skillName: string,
   hash: string,
+  metadata: BundleMetadata,
 ) {
   await rm(targetDir, { recursive: true, force: true });
   await copySkillBundle(bundle, targetDir);
-  await writeMetadata(targetDir, appId, skillName, hash);
+  await writeMetadata(targetDir, appId, skillName, hash, metadata);
 }
 
 async function replaceManagedSkill(
@@ -967,13 +1114,14 @@ async function replaceManagedSkill(
   appId: string,
   skillName: string,
   hash: string,
+  metadata: BundleMetadata,
 ) {
   const suffix = `.kitup-${process.pid}-${Date.now()}`;
   const tmp = `${targetDir}${suffix}`;
   const backup = `${targetDir}${suffix}-backup`;
   await rm(tmp, { recursive: true, force: true });
   await copySkillBundle(bundle, tmp);
-  await writeMetadata(tmp, appId, skillName, hash);
+  await writeMetadata(tmp, appId, skillName, hash, metadata);
   try {
     await rename(targetDir, backup);
     await rename(tmp, targetDir);
@@ -1000,10 +1148,21 @@ async function writeMetadata(
   appId: string,
   skillName: string,
   hash: string,
+  metadata: BundleMetadata,
 ) {
+  const value: InstallMetadata = {
+    schemaVersion: 1,
+    appId,
+    skillName,
+    source: metadata.source,
+    hash,
+  };
+  if (metadata.sourceId) value.sourceId = metadata.sourceId;
+  if (metadata.version) value.version = metadata.version;
+  if (metadata.provenance) value.provenance = metadata.provenance;
   await writeFile(
     join(targetDir, ".kitup.json"),
-    `${JSON.stringify({ schemaVersion: 1, appId, skillName, source, hash }, null, 2)}\n`,
+    `${JSON.stringify(value, null, 2)}\n`,
   );
 }
 

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/url"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -271,11 +273,19 @@ type SkillFile struct {
 }
 
 type SkillBundle struct {
-	kind  string
-	dir   string
-	fsys  fs.FS
-	root  string
-	files []SkillFile
+	kind   string
+	dir    string
+	fsys   fs.FS
+	root   string
+	files  []SkillFile
+	github GitHubBundleOptions
+}
+
+type GitHubBundleOptions struct {
+	Owner string
+	Repo  string
+	Path  string
+	Ref   string
 }
 
 func DirectoryBundle(dir string) SkillBundle {
@@ -288,6 +298,10 @@ func FSBundle(fsys fs.FS, root string) SkillBundle {
 
 func FilesBundle(files []SkillFile) SkillBundle {
 	return SkillBundle{kind: "files", files: files}
+}
+
+func GitHubBundle(opts GitHubBundleOptions) SkillBundle {
+	return SkillBundle{kind: "github", github: opts}
 }
 
 type TargetGroup struct {
@@ -352,11 +366,21 @@ type InstallWorkflowReport struct {
 }
 
 type metadata struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	AppID         string `json:"appId"`
-	SkillName     string `json:"skillName"`
-	Source        string `json:"source"`
-	Hash          string `json:"hash"`
+	SchemaVersion int               `json:"schemaVersion"`
+	AppID         string            `json:"appId"`
+	SkillName     string            `json:"skillName"`
+	Source        string            `json:"source"`
+	Hash          string            `json:"hash"`
+	SourceID      string            `json:"sourceId,omitempty"`
+	Version       string            `json:"version,omitempty"`
+	Provenance    map[string]string `json:"provenance,omitempty"`
+}
+
+type bundleMetadata struct {
+	Source     string
+	SourceID   string
+	Version    string
+	Provenance map[string]string
 }
 
 type bundleFile struct {
@@ -773,9 +797,13 @@ func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
 }
 
 func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
-	bundle, err := readSkillBundle(opts.SkillBundle)
+	bundle, bundleMeta, err := resolveSkillBundle(opts.SkillBundle)
 	if err != nil {
-		return emptyInstallReport([]map[string]any{{"reason": "invalid-skill-bundle"}}), nil
+		reason := "invalid-skill-bundle"
+		if opts.SkillBundle.kind == "github" {
+			reason = "bundle-resolve-failed"
+		}
+		return emptyInstallReport([]map[string]any{{"reason": reason}}), nil
 	}
 	skill := validateNormalizedSkill(bundle)
 	if !skill.Valid {
@@ -793,7 +821,7 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 		switch {
 		case !present:
 			if write {
-				if err := copyManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash); err != nil {
+				if err := copyManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
 					return report, err
 				}
 			}
@@ -806,7 +834,7 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 			report.Skipped = append(report.Skipped, withReason(result, "unchanged"))
 		default:
 			if write {
-				if err := replaceManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash); err != nil {
+				if err := replaceManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
 					return report, err
 				}
 			}
@@ -816,17 +844,17 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 	return report, nil
 }
 
-func copyManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillName, hash string) error {
+func copyManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
 	if err := os.RemoveAll(targetDir); err != nil {
 		return err
 	}
 	if err := copySkillBundle(bundle, targetDir); err != nil {
 		return err
 	}
-	return writeMetadata(targetDir, appID, skillName, hash)
+	return writeMetadata(targetDir, appID, skillName, hash, bundleMeta)
 }
 
-func replaceManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillName, hash string) error {
+func replaceManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
 	suffix := ".kitup-" + time.Now().Format("20060102150405.000000000")
 	tmp := targetDir + suffix
 	backup := targetDir + suffix + "-backup"
@@ -834,7 +862,7 @@ func replaceManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillNa
 	if err := copySkillBundle(bundle, tmp); err != nil {
 		return err
 	}
-	if err := writeMetadata(tmp, appID, skillName, hash); err != nil {
+	if err := writeMetadata(tmp, appID, skillName, hash, bundleMeta); err != nil {
 		_ = os.RemoveAll(tmp)
 		return err
 	}
@@ -872,8 +900,21 @@ func copySkillBundle(bundle normalizedSkillBundle, dest string) error {
 	return nil
 }
 
-func writeMetadata(targetDir, appID, skillName, hash string) error {
-	data, err := json.MarshalIndent(metadata{SchemaVersion: 1, AppID: appID, SkillName: skillName, Source: "bundled", Hash: hash}, "", "  ")
+func writeMetadata(targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
+	meta := metadata{
+		SchemaVersion: 1,
+		AppID:         appID,
+		SkillName:     skillName,
+		Source:        bundleMeta.Source,
+		Hash:          hash,
+		SourceID:      bundleMeta.SourceID,
+		Version:       bundleMeta.Version,
+		Provenance:    bundleMeta.Provenance,
+	}
+	if meta.Source == "" {
+		meta.Source = "bundled"
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -1180,6 +1221,137 @@ func parseFrontmatter(content string) map[string]string {
 	return fields
 }
 
+func resolveSkillBundle(bundle SkillBundle) (normalizedSkillBundle, bundleMetadata, error) {
+	switch bundle.kind {
+	case "github":
+		return resolveGitHubBundle(bundle.github)
+	default:
+		normalized, err := readSkillBundle(bundle)
+		if err != nil {
+			return normalizedSkillBundle{}, bundleMetadata{}, err
+		}
+		return normalized, bundleMetadata{Source: "bundled"}, nil
+	}
+}
+
+func resolveGitHubBundle(opts GitHubBundleOptions) (normalizedSkillBundle, bundleMetadata, error) {
+	root := trimGitHubPath(opts.Path)
+	if opts.Owner == "" || opts.Repo == "" || root == "" || opts.Ref == "" {
+		return normalizedSkillBundle{}, bundleMetadata{}, errors.New("invalid github bundle")
+	}
+	apiBase := envBaseURL("KITUP_GITHUB_API_BASE_URL", "https://api.github.com")
+	rawBase := envBaseURL("KITUP_GITHUB_RAW_BASE_URL", "https://raw.githubusercontent.com")
+	var commit struct {
+		Sha    string `json:"sha"`
+		Commit struct {
+			Tree struct {
+				Sha string `json:"sha"`
+			} `json:"tree"`
+		} `json:"commit"`
+	}
+	if err := getJSON(apiBase+"/repos/"+escapePathPart(opts.Owner)+"/"+escapePathPart(opts.Repo)+"/commits/"+escapePathPart(opts.Ref), &commit); err != nil {
+		return normalizedSkillBundle{}, bundleMetadata{}, err
+	}
+	if commit.Sha == "" || commit.Commit.Tree.Sha == "" {
+		return normalizedSkillBundle{}, bundleMetadata{}, errors.New("invalid github commit")
+	}
+	var tree struct {
+		Tree []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+			Mode string `json:"mode"`
+		} `json:"tree"`
+	}
+	if err := getJSON(apiBase+"/repos/"+escapePathPart(opts.Owner)+"/"+escapePathPart(opts.Repo)+"/git/trees/"+escapePathPart(commit.Commit.Tree.Sha)+"?recursive=1", &tree); err != nil {
+		return normalizedSkillBundle{}, bundleMetadata{}, err
+	}
+	prefix := root + "/"
+	files := []SkillFile{}
+	for _, item := range tree.Tree {
+		if item.Type != "blob" || !strings.HasPrefix(item.Path, prefix) {
+			continue
+		}
+		contents, err := getBytes(rawBase + "/" + escapePathPart(opts.Owner) + "/" + escapePathPart(opts.Repo) + "/" + escapePathPart(commit.Sha) + "/" + escapePath(item.Path))
+		if err != nil {
+			return normalizedSkillBundle{}, bundleMetadata{}, err
+		}
+		mode := fs.FileMode(0o644)
+		if item.Mode == "100755" {
+			mode = 0o755
+		}
+		files = append(files, SkillFile{Path: strings.TrimPrefix(item.Path, prefix), Contents: contents, Mode: mode})
+	}
+	if len(files) == 0 {
+		return normalizedSkillBundle{}, bundleMetadata{}, errors.New("github bundle path not found")
+	}
+	bundle, err := normalizeSkillFiles(files)
+	if err != nil {
+		return normalizedSkillBundle{}, bundleMetadata{}, err
+	}
+	return bundle, bundleMetadata{
+		Source:   "github",
+		SourceID: "github:" + opts.Owner + "/" + opts.Repo + "/" + root,
+		Version:  opts.Ref,
+		Provenance: map[string]string{
+			"owner":          opts.Owner,
+			"repo":           opts.Repo,
+			"path":           root,
+			"ref":            opts.Ref,
+			"resolvedCommit": commit.Sha,
+		},
+	}, nil
+}
+
+func envBaseURL(name, fallback string) string {
+	value := strings.TrimRight(os.Getenv(name), "/")
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func getJSON(url string, value any) error {
+	data, err := getBytes(url)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, value)
+}
+
+func getBytes(value string) ([]byte, error) {
+	request, err := http.NewRequest(http.MethodGet, value, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", "kitup")
+	client := http.Client{Timeout: 30 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return nil, fmt.Errorf("github request failed: %s", value)
+	}
+	return io.ReadAll(response.Body)
+}
+
+func trimGitHubPath(value string) string {
+	return strings.Trim(value, "/")
+}
+
+func escapePath(value string) string {
+	parts := strings.Split(value, "/")
+	for index, part := range parts {
+		parts[index] = escapePathPart(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+func escapePathPart(value string) string {
+	return url.PathEscape(value)
+}
+
 func readSkillBundle(bundle SkillBundle) (normalizedSkillBundle, error) {
 	switch bundle.kind {
 	case "directory":
@@ -1196,6 +1368,9 @@ func readSkillBundle(bundle SkillBundle) (normalizedSkillBundle, error) {
 		return normalizeSkillFiles(files)
 	case "files":
 		return normalizeSkillFiles(bundle.files)
+	case "github":
+		normalized, _, err := resolveGitHubBundle(bundle.github)
+		return normalized, err
 	default:
 		return normalizedSkillBundle{}, errors.New("missing skill bundle")
 	}

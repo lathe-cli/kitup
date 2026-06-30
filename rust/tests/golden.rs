@@ -1,16 +1,19 @@
 use kitup::{
     classify_install_workflow_exit, compute_bundle_content_hash, detect_hosts, directory_bundle,
-    files_bundle, install_bundled_skill, load_host_spec, parse_install_flags, plan_bundled_skill,
-    resolve_hosts, resolve_install_selection, run_bundled_skill_install_with_io,
-    uninstall_bundled_skill, update_bundled_skill, validate_skill_bundle, AgentSelector,
-    BaseOptions, InstallFlagValues, InstallOptions, InstallSelectionOptions,
-    InstallWorkflowOptions, ParsedInstallFlags, Scope, SkillBundle, SkillFile, UninstallOptions,
+    files_bundle, github_bundle, install_bundled_skill, load_host_spec, parse_install_flags,
+    plan_bundled_skill, resolve_hosts, resolve_install_selection,
+    run_bundled_skill_install_with_io, uninstall_bundled_skill, update_bundled_skill,
+    validate_skill_bundle, AgentSelector, BaseOptions, GitHubBundleOptions, InstallFlagValues,
+    InstallOptions, InstallSelectionOptions, InstallWorkflowOptions, ParsedInstallFlags, Scope,
+    SkillBundle, SkillFile, UninstallOptions,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Deserialize)]
@@ -301,6 +304,9 @@ fn setup_given(case: &GoldenCase, home: &Path, workspace: &Path) {
     if let Some(metadata) = case.given.get("metadata").and_then(Value::as_object) {
         write_metadata_fixture(case, home, workspace, metadata);
     }
+    if let Some(github) = case.given.get("github").and_then(Value::as_object) {
+        start_github_fixture(github);
+    }
 }
 
 fn assert_expected_files(case: &GoldenCase, home: &Path, workspace: &Path) {
@@ -339,18 +345,7 @@ fn assert_expected_metadata(case: &GoldenCase, home: &Path, workspace: &Path) {
     for (key, value) in metadata["fields"].as_object().unwrap() {
         assert_json_eq(&actual[key], value.clone());
     }
-    let mut hash = metadata["hash"].as_str().unwrap().to_string();
-    if hash == "from-skill-bundle-dir" {
-        hash = compute_bundle_content_hash(&directory_bundle(repo_path(
-            case.options["skillBundleDir"].as_str().unwrap(),
-        )))
-        .unwrap();
-    } else if hash == "from-skill-files" {
-        hash = compute_bundle_content_hash(&files_bundle(skill_files(
-            case.options["skillFiles"].as_array().unwrap(),
-        )))
-        .unwrap();
-    }
+    let hash = expected_bundle_hash(case, metadata["hash"].as_str().unwrap());
     assert_eq!(actual["hash"], hash);
 }
 
@@ -448,15 +443,28 @@ fn write_metadata_fixture(
     metadata: &Map<String, Value>,
 ) {
     let mut fields = metadata["fields"].as_object().unwrap().clone();
-    let mut hash = metadata["hash"].as_str().unwrap().to_string();
-    if hash == "from-skill-bundle-dir" {
-        hash = compute_bundle_content_hash(&directory_bundle(case_skill_bundle_dir(case))).unwrap();
-    }
+    let hash = expected_bundle_hash(case, metadata["hash"].as_str().unwrap());
     fields.insert("hash".to_string(), json!(hash));
     write_fixture_file(
         &expand_string(metadata["path"].as_str().unwrap(), home, workspace),
         &Value::Object(fields),
     );
+}
+
+fn expected_bundle_hash(case: &GoldenCase, marker: &str) -> String {
+    match marker {
+        "from-skill-bundle-dir" => {
+            compute_bundle_content_hash(&directory_bundle(case_skill_bundle_dir(case))).unwrap()
+        }
+        "from-skill-files" => compute_bundle_content_hash(&files_bundle(skill_files(
+            case.options["skillFiles"].as_array().unwrap(),
+        )))
+        .unwrap(),
+        "from-github-bundle" => {
+            compute_bundle_content_hash(&files_bundle(github_skill_files(case))).unwrap()
+        }
+        _ => marker.to_string(),
+    }
 }
 
 fn write_fixture_file(path: &Path, value: &Value) {
@@ -511,6 +519,14 @@ fn skill_bundle_from_options(options: &Map<String, Value>) -> SkillBundle {
     if let Some(dir) = options.get("skillBundleDir").and_then(Value::as_str) {
         return directory_bundle(repo_path(dir));
     }
+    if let Some(bundle) = options.get("githubBundle").and_then(Value::as_object) {
+        return github_bundle(GitHubBundleOptions {
+            owner: bundle["owner"].as_str().unwrap().to_string(),
+            repo: bundle["repo"].as_str().unwrap().to_string(),
+            path: bundle["path"].as_str().unwrap().to_string(),
+            ref_name: bundle["ref"].as_str().unwrap().to_string(),
+        });
+    }
     files_bundle(Vec::new())
 }
 
@@ -526,6 +542,108 @@ fn skill_files(values: &[Value]) -> Vec<SkillFile> {
             }
         })
         .collect()
+}
+
+fn github_skill_files(case: &GoldenCase) -> Vec<SkillFile> {
+    let bundle = case.options["githubBundle"].as_object().unwrap();
+    let root = format!("{}/", bundle["path"].as_str().unwrap().trim_matches('/'));
+    let files = case.given["github"]["files"].as_object().unwrap();
+    files
+        .iter()
+        .filter_map(|(path, contents)| {
+            path.strip_prefix(&root).map(|relative| SkillFile {
+                path: relative.to_string(),
+                contents: contents.as_str().unwrap().as_bytes().to_vec(),
+                mode: None,
+            })
+        })
+        .collect()
+}
+
+fn start_github_fixture(github: &Map<String, Value>) {
+    let owner = github["owner"].as_str().unwrap().to_string();
+    let repo = github["repo"].as_str().unwrap().to_string();
+    let ref_name = github["ref"].as_str().unwrap().to_string();
+    let commit = github["commit"].as_str().unwrap().to_string();
+    let tree_sha = github["treeSha"].as_str().unwrap().to_string();
+    let files = github["files"].as_object().unwrap().clone();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base = format!("http://{}", addr);
+    std::env::set_var("KITUP_GITHUB_API_BASE_URL", &base);
+    std::env::set_var("KITUP_GITHUB_RAW_BASE_URL", &base);
+    thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            handle_github_fixture_connection(
+                stream, &owner, &repo, &ref_name, &commit, &tree_sha, &files,
+            );
+        }
+    });
+}
+
+fn handle_github_fixture_connection(
+    mut stream: TcpStream,
+    owner: &str,
+    repo: &str,
+    ref_name: &str,
+    commit: &str,
+    tree_sha: &str,
+    files: &Map<String, Value>,
+) {
+    let mut buffer = [0; 4096];
+    let Ok(size) = stream.read(&mut buffer) else {
+        return;
+    };
+    let request = String::from_utf8_lossy(&buffer[..size]);
+    let path = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .unwrap_or("/");
+    let path = path.split('?').next().unwrap_or(path);
+    let commit_path = format!("/repos/{owner}/{repo}/commits/{ref_name}");
+    let tree_path = format!("/repos/{owner}/{repo}/git/trees/{tree_sha}");
+    if path == commit_path {
+        write_http_json(
+            &mut stream,
+            json!({ "sha": commit, "commit": { "tree": { "sha": tree_sha } } }),
+        );
+        return;
+    }
+    if path == tree_path {
+        let tree: Vec<_> = files
+            .keys()
+            .map(|path| {
+                json!({
+                    "path": path,
+                    "type": "blob",
+                    "mode": if path.ends_with(".sh") { "100755" } else { "100644" }
+                })
+            })
+            .collect();
+        write_http_json(&mut stream, json!({ "tree": tree }));
+        return;
+    }
+    let raw_prefix = format!("/{owner}/{repo}/{commit}/");
+    if let Some(file) = path.strip_prefix(&raw_prefix) {
+        if let Some(contents) = files.get(file).and_then(Value::as_str) {
+            write_http(&mut stream, "200 OK", "application/octet-stream", contents);
+            return;
+        }
+    }
+    write_http(&mut stream, "404 Not Found", "text/plain", "not found");
+}
+
+fn write_http_json(stream: &mut TcpStream, value: Value) {
+    write_http(stream, "200 OK", "application/json", &value.to_string());
+}
+
+fn write_http(stream: &mut TcpStream, status: &str, content_type: &str, body: &str) {
+    let response = format!(
+        "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = std::io::Write::write_all(stream, response.as_bytes());
 }
 
 fn scope(value: &str) -> Scope {

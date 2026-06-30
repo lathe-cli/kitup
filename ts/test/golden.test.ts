@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import {
   mkdtemp,
   mkdir,
@@ -17,6 +18,7 @@ import {
   detectHosts,
   directoryBundle,
   filesBundle,
+  githubBundle,
   installBundledSkill,
   loadHostSpec,
   planBundledSkill,
@@ -42,11 +44,13 @@ for (const testCase of cases) {
   await mkdir(home, { recursive: true });
   await mkdir(workspace, { recursive: true });
 
+  const cleanups: Array<() => Promise<void> | void> = [];
   try {
-    await setupGiven(testCase, home, workspace);
+    await setupGiven(testCase, home, workspace, cleanups);
     await runCase(testCase, home, workspace);
     passed++;
   } finally {
+    for (const cleanup of cleanups.reverse()) await cleanup();
     await rm(root, { recursive: true, force: true });
   }
 }
@@ -167,7 +171,12 @@ async function runCase(testCase: any, home: string, workspace: string) {
   await assertExpectedMetadata(testCase, home, workspace);
 }
 
-async function setupGiven(testCase: any, home: string, workspace: string) {
+async function setupGiven(
+  testCase: any,
+  home: string,
+  workspace: string,
+  cleanups: Array<() => Promise<void> | void>,
+) {
   for (const dir of testCase.given.dirs ?? []) {
     await mkdir(expandValue(dir, home, workspace), { recursive: true });
   }
@@ -190,6 +199,9 @@ async function setupGiven(testCase: any, home: string, workspace: string) {
       workspace,
       testCase.given.metadata,
     );
+
+  if (testCase.given.github)
+    await startGitHubFixture(testCase.given.github, cleanups);
 }
 
 async function assertExpectedFiles(
@@ -216,16 +228,7 @@ async function assertExpectedMetadata(
   const actual = JSON.parse(await readFile(path, "utf8"));
   for (const [key, value] of Object.entries(expected.fields))
     assert.deepEqual(actual[key], value);
-  const expectedHash =
-    expected.hash === "from-skill-bundle-dir"
-      ? await computeBundleContentHash(
-          directoryBundle(resolveRepoPath(testCase.options.skillBundleDir)),
-        )
-      : expected.hash === "from-skill-files"
-        ? await computeBundleContentHash(
-            filesBundle(testCase.options.skillFiles),
-          )
-        : expected.hash;
+  const expectedHash = await expectedBundleHash(testCase, expected.hash);
   assert.equal(actual.hash, expectedHash);
 }
 
@@ -253,13 +256,83 @@ async function writeMetadataFixture(
   metadata: any,
 ) {
   const path = expandValue(metadata.path, home, workspace);
-  const hash =
-    metadata.hash === "from-skill-bundle-dir"
-      ? await computeBundleContentHash(
-          directoryBundle(caseSkillBundleDir(testCase)),
-        )
-      : metadata.hash;
+  const hash = await expectedBundleHash(testCase, metadata.hash);
   await writeFixtureFile(path, { ...metadata.fields, hash });
+}
+
+async function expectedBundleHash(testCase: any, marker: string) {
+  if (marker === "from-skill-bundle-dir")
+    return computeBundleContentHash(
+      directoryBundle(caseSkillBundleDir(testCase)),
+    );
+  if (marker === "from-skill-files")
+    return computeBundleContentHash(filesBundle(testCase.options.skillFiles));
+  if (marker === "from-github-bundle")
+    return computeBundleContentHash(filesBundle(githubSkillFiles(testCase)));
+  return marker;
+}
+
+async function startGitHubFixture(
+  github: any,
+  cleanups: Array<() => Promise<void> | void>,
+) {
+  const previousApi = process.env.KITUP_GITHUB_API_BASE_URL;
+  const previousRaw = process.env.KITUP_GITHUB_RAW_BASE_URL;
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const path = decodeURIComponent(url.pathname);
+    const commitPath = `/repos/${github.owner}/${github.repo}/commits/${github.ref}`;
+    const treePath = `/repos/${github.owner}/${github.repo}/git/trees/${github.treeSha}`;
+    if (path === commitPath) {
+      writeJson(response, {
+        sha: github.commit,
+        commit: { tree: { sha: github.treeSha } },
+      });
+      return;
+    }
+    if (path === treePath) {
+      writeJson(response, {
+        tree: Object.keys(github.files).map((file) => ({
+          path: file,
+          type: "blob",
+          mode: file.endsWith(".sh") ? "100755" : "100644",
+        })),
+      });
+      return;
+    }
+    const rawPrefix = `/${github.owner}/${github.repo}/${github.commit}/`;
+    if (path.startsWith(rawPrefix)) {
+      const file = path.slice(rawPrefix.length);
+      if (github.files[file] !== undefined) {
+        response.writeHead(200, { "content-type": "application/octet-stream" });
+        response.end(github.files[file]);
+        return;
+      }
+    }
+    response.writeHead(404);
+    response.end("not found");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("bad server");
+  const base = `http://127.0.0.1:${address.port}`;
+  process.env.KITUP_GITHUB_API_BASE_URL = base;
+  process.env.KITUP_GITHUB_RAW_BASE_URL = base;
+  cleanups.push(async () => {
+    restoreEnv("KITUP_GITHUB_API_BASE_URL", previousApi);
+    restoreEnv("KITUP_GITHUB_RAW_BASE_URL", previousRaw);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+}
+
+function writeJson(response: any, value: any) {
+  response.writeHead(200, { "content-type": "application/json" });
+  response.end(JSON.stringify(value));
+}
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }
 
 async function writeFixtureFile(path: string, value: any) {
@@ -300,6 +373,8 @@ function expandOptions(options: any, home: string, workspace: string) {
     );
   if (expanded.skillFiles)
     expanded.skillBundle = filesBundle(expanded.skillFiles);
+  if (expanded.githubBundle)
+    expanded.skillBundle = githubBundle(expanded.githubBundle);
   return expanded;
 }
 
@@ -328,6 +403,17 @@ function caseSkillBundleDir(testCase: any) {
     testCase.options.skillBundleDir ??
       `testdata/skills/${testCase.options.skillName}`,
   );
+}
+
+function githubSkillFiles(testCase: any) {
+  const root = testCase.options.githubBundle.path.replace(/^\/+|\/+$/g, "");
+  const prefix = `${root}/`;
+  return Object.entries(testCase.given.github.files)
+    .filter(([path]) => path.startsWith(prefix))
+    .map(([path, contents]) => ({
+      path: path.slice(prefix.length),
+      contents: contents as string,
+    }));
 }
 
 function assertSelection(actual: any, expected: any) {
