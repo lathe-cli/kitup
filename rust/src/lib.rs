@@ -680,16 +680,7 @@ pub fn run_bundled_skill_install_with_io<R: BufRead, W: Write>(
     input: &mut R,
     output: &mut W,
 ) -> io::Result<InstallWorkflowReport> {
-    let (scope, scope_error) = resolve_workflow_scope(
-        input,
-        output,
-        options.install.scope,
-        options.scope_set,
-        options.prompt_scope,
-        options.default_scope,
-        options.yes,
-        options.stdin_tty,
-    )?;
+    let (scope, scope_error) = resolve_workflow_scope(input, output, options)?;
     if let Some(selection) = scope_error {
         render_selection_errors(output, &selection)?;
         let empty = install_report(vec![]);
@@ -1034,21 +1025,16 @@ fn has_install_writes(report: &Value) -> bool {
 fn resolve_workflow_scope<R: BufRead, W: Write>(
     input: &mut R,
     output: &mut W,
-    requested: Scope,
-    scope_set: bool,
-    prompt_scope: bool,
-    default_scope: Option<Scope>,
-    yes: bool,
-    stdin_tty: bool,
+    options: &InstallWorkflowOptions,
 ) -> io::Result<(Option<Scope>, Option<InstallSelection>)> {
-    let default_scope = default_scope.unwrap_or(Scope::User);
-    if scope_set || !prompt_scope {
-        return Ok((Some(requested), None));
+    let default_scope = options.default_scope.unwrap_or(Scope::User);
+    if options.scope_set || !options.prompt_scope {
+        return Ok((Some(options.install.scope), None));
     }
-    if yes {
+    if options.yes {
         return Ok((Some(default_scope), None));
     }
-    if !stdin_tty {
+    if !options.stdin_tty {
         return Ok((
             None,
             Some(error_selection(

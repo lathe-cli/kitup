@@ -195,11 +195,7 @@ export interface InstallWorkflowReport {
 }
 
 export type InstallWorkflowExitCode =
-  | "ok"
-  | "canceled"
-  | "selection-error"
-  | "conflict"
-  | "error";
+  "ok" | "canceled" | "selection-error" | "conflict" | "error";
 
 export interface InstallWorkflowExit {
   ok: boolean;
@@ -246,13 +242,15 @@ export function filesBundle(files: SkillFile[]): SkillBundle {
   return { kind: "files", files };
 }
 
-export function parseInstallFlags(flags: InstallFlagValues): ParsedInstallFlags {
+export function parseInstallFlags(
+  flags: InstallFlagValues,
+): ParsedInstallFlags {
   const errors: InstallFlagError[] = [];
   const scope = parseScopeFlag(flags.scope, errors);
   const agents = agentSelectorFromFlags(flags.agents ?? [], errors);
   return {
     scope,
-    scopeSet: flags.scopeSet ?? (flags.scope !== undefined),
+    scopeSet: flags.scopeSet ?? flags.scope !== undefined,
     agents,
     yes: Boolean(flags.yes),
     dryRun: Boolean(flags.dryRun),
@@ -322,11 +320,17 @@ export function installWorkflowError(
   workflow: InstallWorkflowReport,
 ): Error | undefined {
   const exit = classifyInstallWorkflowExit(workflow);
-  return exit.ok || exit.code === "canceled" ? undefined : new Error(exit.message);
+  return exit.ok || exit.code === "canceled"
+    ? undefined
+    : new Error(exit.message);
 }
 
-export function installFlagError(errors: InstallFlagError[]): Error | undefined {
-  return errors.length === 0 ? undefined : new Error(installUxText.invalidFlags);
+export function installFlagError(
+  errors: InstallFlagError[],
+): Error | undefined {
+  return errors.length === 0
+    ? undefined
+    : new Error(installUxText.invalidFlags);
 }
 
 export async function loadHostSpec(hostsFile?: string): Promise<HostSpec> {
@@ -482,7 +486,7 @@ export async function runBundledSkillInstall(
     reader,
     output,
     options.scope,
-    options.scopeSet ?? (options.scope !== undefined),
+    options.scopeSet ?? options.scope !== undefined,
     Boolean(options.promptScope),
     options.defaultScope,
     Boolean(options.yes),
@@ -564,11 +568,25 @@ export async function runBundledSkillInstall(
   renderInstallSummary(output, plan);
 
   if (options.dryRun) {
-    return { selection, scope, plan, report: plan, canceled: false, dryRun: true };
+    return {
+      selection,
+      scope,
+      plan,
+      report: plan,
+      canceled: false,
+      dryRun: true,
+    };
   }
 
   if (!hasInstallWrites(plan)) {
-    return { selection, scope, plan, report: plan, canceled: false, dryRun: false };
+    return {
+      selection,
+      scope,
+      plan,
+      report: plan,
+      canceled: false,
+      dryRun: false,
+    };
   }
 
   if (selection.needsConfirmation) {
@@ -1097,13 +1115,19 @@ async function promptScopeSelection(
     writeLine(output, "  1. user");
     writeLine(output, "  2. project");
     output.write(`${installUxText.scopePrompt} [${defaultScope}]: `);
-    const selected = parseScopeSelection((await reader.readLine()) ?? "", defaultScope);
+    const selected = parseScopeSelection(
+      (await reader.readLine()) ?? "",
+      defaultScope,
+    );
     if (selected) return selected;
     writeLine(output, installUxText.invalidScopeSelection);
   }
 }
 
-function parseScopeSelection(line: string, defaultScope: Scope): Scope | undefined {
+function parseScopeSelection(
+  line: string,
+  defaultScope: Scope,
+): Scope | undefined {
   switch (line.trim().toLowerCase()) {
     case "":
       return defaultScope;
