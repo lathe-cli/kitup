@@ -457,6 +457,7 @@ function normalizeParsedFlags(parsed: any) {
     agentIds: Array.isArray(parsed.agents) ? parsed.agents : [],
     yes: parsed.yes,
     dryRun: parsed.dryRun,
+    force: parsed.force,
     errors: parsed.errors,
   };
 }

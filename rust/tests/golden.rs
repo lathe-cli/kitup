@@ -99,6 +99,10 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
                     .get("dryRun")
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
+                force: options
+                    .get("force")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             });
             assert_json_eq(
                 &normalized_parsed_flags(&parsed),
@@ -160,6 +164,10 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
                             .get("agents")
                             .map(agent_selector)
                             .unwrap_or(AgentSelector::Auto),
+                        force: options
+                            .get("force")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
                     },
                     yes: options.get("yes").and_then(Value::as_bool).unwrap_or(false),
                     dry_run: options
@@ -270,6 +278,10 @@ fn run_report_case(
                 skill_bundle: skill_bundle_from_options(options),
                 scope: scope(options["scope"].as_str().unwrap()),
                 agents: agent_selector(&options["agents"]),
+                force: options
+                    .get("force")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             };
             match case.operation.as_str() {
                 "update" => serde_json::to_value(update_bundled_skill(&options).unwrap()).unwrap(),
@@ -385,6 +397,7 @@ fn normalized_parsed_flags(parsed: &ParsedInstallFlags) -> Value {
         "agentIds": agent_ids,
         "yes": parsed.yes,
         "dryRun": parsed.dry_run,
+        "force": parsed.force,
         "errors": parsed.errors
     })
 }

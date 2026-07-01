@@ -59,6 +59,33 @@ func TestInstallCommandPromptsForScopeBeforeInstall(t *testing.T) {
 	}
 }
 
+func TestInstallCommandForceOverwritesUnmanaged(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(home, ".agents", "skills", "basic")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte("---\nname: basic\ndescription: unmanaged\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	cmd := NewSkillCommand(Options{
+		AppID:  "example-cli",
+		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Home:   home,
+		Out:    &out,
+	})
+	cmd.SetArgs([]string{"install", "--agent", "codex", "--yes", "--force"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(target, ".kitup.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInstallCommandReturnsCoreFlagError(t *testing.T) {
 	cmd := NewInstallCommand(Options{
 		AppID:  "example-cli",

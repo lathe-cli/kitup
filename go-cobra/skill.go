@@ -36,6 +36,7 @@ func NewInstallCommand(opts Options) *cobra.Command {
 	var agents []string
 	var yes bool
 	var dryRun bool
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:          kitup.InstallUX.InstallUse,
@@ -48,6 +49,7 @@ func NewInstallCommand(opts Options) *cobra.Command {
 				Agents:   agents,
 				Yes:      yes,
 				DryRun:   dryRun,
+				Force:    force,
 			})
 			if err := kitup.InstallFlagError(parsed.Errors); err != nil {
 				return err
@@ -63,6 +65,7 @@ func NewInstallCommand(opts Options) *cobra.Command {
 					SkillBundle: opts.Bundle,
 					Scope:       parsed.Scope,
 					Agents:      parsed.Agents,
+					Force:       parsed.Force,
 				},
 				Yes:          parsed.Yes,
 				DryRun:       parsed.DryRun,
@@ -85,6 +88,7 @@ func NewInstallCommand(opts Options) *cobra.Command {
 	cmd.Flags().StringArrayVar(&agents, "agent", nil, kitup.InstallUX.AgentFlag)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, kitup.InstallUX.DryRunFlag)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, kitup.InstallUX.YesFlag)
+	cmd.Flags().BoolVar(&force, "force", false, kitup.InstallUX.ForceFlag)
 	return cmd
 }
 

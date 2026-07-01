@@ -163,6 +163,7 @@ let report = kitup::install_bundled_skill(&kitup::InstallOptions {
     skill_bundle: kitup::directory_bundle("./skills/mycli"),
     scope: kitup::Scope::User,
     agents: kitup::AgentSelector::Auto,
+    force: false,
 })?;
 ```
 
@@ -180,6 +181,7 @@ let report = kitup::install_bundled_skill(&kitup::InstallOptions {
     }),
     scope: kitup::Scope::User,
     agents: kitup::AgentSelector::Auto,
+    force: false,
 })?;
 ```
 
@@ -217,6 +219,7 @@ Install options use the same concepts across languages:
 - `skillBundle` / `SkillBundle` / `skill_bundle`: local directory, embedded files, or public GitHub bundle
 - `scope`: `user` or `project`
 - `agents`: `"auto"`, `"*"`, or explicit host ids
+- `force`: overwrite unmanaged or different-owner target directories instead of reporting conflicts
 - `home`, `cwd`, `hostsFile`: optional test and embedding overrides
 
 Bundle file paths must use root-relative POSIX paths. SDKs reject empty paths, absolute paths, `..`, duplicate files, and backslash paths. SDKs exclude `.kitup.json`, `.git`, `.DS_Store`, swap files, and editor backups before validation, hashing, and copy.
@@ -248,8 +251,9 @@ Standard install flags:
 - `--agent`: repeatable target agent id; comma-separated values are accepted; `*` means all hosts and must be the only agent value
 - `--dry-run`: render the plan without writing
 - `--yes` / `-y`: skip prompts and accept policy-selected targets
+- `--force`: overwrite unmanaged or different-owner target directories
 
-Flag parsing returns a normalized scope, `scopeSet`, normalized agent selector, `yes`, `dryRun`, and structured flag errors. An empty agent list maps to `auto`; `*` maps to all hosts; explicit ids are deduplicated in input order.
+Flag parsing returns a normalized scope, `scopeSet`, normalized agent selector, `yes`, `dryRun`, `force`, and structured flag errors. An empty agent list maps to `auto`; `*` maps to all hosts; explicit ids are deduplicated in input order.
 
 For CLI workflows, pass `promptScope: true`. If `scopeSet` is false, TTY mode prompts for scope before agent selection and planning. Enter uses `defaultScope` or `user`. Non-TTY without explicit scope and without `yes` returns `scope-selection-required`. `yes` with no explicit scope uses `defaultScope` or `user`.
 
@@ -267,6 +271,7 @@ Recommended CLI behavior:
 mycli skill install
 mycli skill install --scope user --agent codex
 mycli skill install --scope project --agent codex --agent claude-code
+mycli skill install --scope user --agent codex --force
 ```
 
 The lower-level selection resolver remains available for custom shells. It returns one of:
@@ -309,4 +314,4 @@ TypeScript returns typed report objects. Go exposes `InstallReport`, `UninstallR
 
 The serialized JSON report shape is the same across TypeScript, Go, and Rust. `installed`, `updated`, and `removed` contain target results. `skipped` and `conflicts` contain target results plus `reason`.
 
-Conflict is the safe default. A target directory without matching `.kitup.json` ownership metadata is reported as a conflict, not overwritten.
+Conflict is the safe default. A target directory without matching `.kitup.json` ownership metadata is reported as a conflict, not overwritten unless `force` / `--force` is explicit.

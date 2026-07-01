@@ -160,11 +160,15 @@ let result = kitup::run_bundled_skill_install(&kitup::InstallWorkflowOptions {
         skill_bundle: kitup::directory_bundle("./skills/mycli"),
         scope: kitup::Scope::User,
         agents: kitup::AgentSelector::Auto,
+        force: false,
     },
     yes: false,
     dry_run: false,
     stdin_tty: stdin_tty,
     current_agent: None,
+    default_scope: None,
+    scope_set: true,
+    prompt_scope: false,
 })?;
 ```
 

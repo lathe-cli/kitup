@@ -24,6 +24,7 @@ pub struct InstallUxText {
     pub agent_flag: &'static str,
     pub dry_run_flag: &'static str,
     pub yes_flag: &'static str,
+    pub force_flag: &'static str,
     pub select_scope: &'static str,
     pub scope_prompt: &'static str,
     pub invalid_scope_selection: &'static str,
@@ -49,6 +50,7 @@ pub const INSTALL_UX: InstallUxText = InstallUxText {
     agent_flag: "Target agent id. Repeat for multiple agents. Use '*' for all.",
     dry_run_flag: "Show install plan without writing",
     yes_flag: "Skip prompts and accept policy-selected targets",
+    force_flag: "Overwrite unsafe target conflicts",
     select_scope: "Select install scope:",
     scope_prompt: "Scope (user/project)",
     invalid_scope_selection: "Invalid scope selection.",
@@ -79,6 +81,7 @@ pub struct InstallFlagValues {
     pub agents: Vec<String>,
     pub yes: bool,
     pub dry_run: bool,
+    pub force: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -88,6 +91,7 @@ pub struct ParsedInstallFlags {
     pub agents: AgentSelector,
     pub yes: bool,
     pub dry_run: bool,
+    pub force: bool,
     pub errors: Vec<Value>,
 }
 
@@ -105,6 +109,7 @@ pub struct InstallOptions {
     pub skill_bundle: SkillBundle,
     pub scope: Scope,
     pub agents: AgentSelector,
+    pub force: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -331,6 +336,7 @@ pub fn parse_install_flags(flags: InstallFlagValues) -> ParsedInstallFlags {
         agents,
         yes: flags.yes,
         dry_run: flags.dry_run,
+        force: flags.force,
         errors,
     }
 }
@@ -817,7 +823,7 @@ pub fn run_bundled_skill_install_with_io<R: BufRead, W: Write>(
     install.agents = AgentSelector::Explicit(selection.selected_host_ids.clone());
     install.scope = scope;
     let plan = plan_bundled_skill(&install)?;
-    if !has_visible_install_plan(&plan) {
+    if plan.installed.len() + plan.updated.len() + plan.conflicts.len() + plan.errors.len() == 0 {
         return Ok(InstallWorkflowReport {
             selection,
             scope: workflow_scope,
@@ -827,8 +833,8 @@ pub fn run_bundled_skill_install_with_io<R: BufRead, W: Write>(
             dry_run: options.dry_run,
         });
     }
-    render_install_summary(output, &plan)?;
     if options.dry_run {
+        render_install_summary(output, &plan)?;
         return Ok(InstallWorkflowReport {
             selection,
             scope: workflow_scope,
@@ -838,7 +844,21 @@ pub fn run_bundled_skill_install_with_io<R: BufRead, W: Write>(
             dry_run: true,
         });
     }
-    if !has_install_writes(&plan) {
+    if !plan.conflicts.is_empty() || !plan.errors.is_empty() {
+        let mut report = plan.clone();
+        report.installed.clear();
+        report.updated.clear();
+        return Ok(InstallWorkflowReport {
+            selection,
+            scope: workflow_scope,
+            plan: plan.clone(),
+            report,
+            canceled: false,
+            dry_run: options.dry_run,
+        });
+    }
+    render_install_summary(output, &plan)?;
+    if plan.installed.len() + plan.updated.len() == 0 {
         return Ok(InstallWorkflowReport {
             selection,
             scope: workflow_scope,
@@ -939,9 +959,39 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                 }
                 report.installed.push(result);
             }
-            MetadataState::Unmanaged => report.conflicts.push(with_reason(result, "unmanaged")),
+            MetadataState::Unmanaged => {
+                if options.force {
+                    if write {
+                        replace_managed_skill(
+                            &bundle,
+                            &target.target_dir,
+                            &options.app_id,
+                            &skill_name,
+                            &hash,
+                            &bundle_metadata,
+                        )?;
+                    }
+                    report.updated.push(result);
+                } else {
+                    report.conflicts.push(with_reason(result, "unmanaged"));
+                }
+            }
             MetadataState::Managed(meta) if meta.app_id != options.app_id => {
-                report.conflicts.push(with_reason(result, "owner-mismatch"))
+                if options.force {
+                    if write {
+                        replace_managed_skill(
+                            &bundle,
+                            &target.target_dir,
+                            &options.app_id,
+                            &skill_name,
+                            &hash,
+                            &bundle_metadata,
+                        )?;
+                    }
+                    report.updated.push(result);
+                } else {
+                    report.conflicts.push(with_reason(result, "owner-mismatch"));
+                }
             }
             MetadataState::Managed(meta) if meta.hash == hash => {
                 report.skipped.push(with_reason(result, "unchanged"))
@@ -1104,14 +1154,6 @@ fn install_report(errors: Vec<Value>) -> InstallReport {
         conflicts: vec![],
         errors: report_errors(errors),
     }
-}
-
-fn has_visible_install_plan(report: &InstallReport) -> bool {
-    report.installed.len() + report.updated.len() + report.conflicts.len() + report.errors.len() > 0
-}
-
-fn has_install_writes(report: &InstallReport) -> bool {
-    report.installed.len() + report.updated.len() > 0
 }
 
 fn resolve_workflow_scope<R: BufRead, W: Write>(

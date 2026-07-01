@@ -71,6 +71,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 			Agents:   stringSlice(opts["agents"]),
 			Yes:      boolValue(opts["yes"]),
 			DryRun:   boolValue(opts["dryRun"]),
+			Force:    boolValue(opts["force"]),
 		}), tc.Expected["parsed"].(map[string]any))
 	case "resolve-install-selection":
 		selection, err := ResolveInstallSelection(InstallSelectionOptions{
@@ -91,6 +92,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 				SkillBundle: skillBundleFromOptions(opts),
 				Scope:       Scope(stringValue(opts["scope"])),
 				Agents:      agentSelector(opts["agents"]),
+				Force:       boolValue(opts["force"]),
 			},
 			Yes:          boolValue(opts["yes"]),
 			DryRun:       boolValue(opts["dryRun"]),
@@ -303,6 +305,7 @@ func assertParsedFlags(t *testing.T, actual ParsedInstallFlags, expected map[str
 		"agentIds":  agentIDs,
 		"yes":       actual.Yes,
 		"dryRun":    actual.DryRun,
+		"force":     actual.Force,
 		"errors":    actual.Errors,
 	}, expected)
 }

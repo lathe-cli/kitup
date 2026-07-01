@@ -37,6 +37,7 @@ type InstallUXText struct {
 	AgentFlag             string
 	DryRunFlag            string
 	YesFlag               string
+	ForceFlag             string
 	SelectScope           string
 	ScopePrompt           string
 	InvalidScopeSelection string
@@ -62,6 +63,7 @@ var InstallUX = InstallUXText{
 	AgentFlag:             "Target agent id. Repeat for multiple agents. Use '*' for all.",
 	DryRunFlag:            "Show install plan without writing",
 	YesFlag:               "Skip prompts and accept policy-selected targets",
+	ForceFlag:             "Overwrite unsafe target conflicts",
 	SelectScope:           "Select install scope:",
 	ScopePrompt:           "Scope (user/project)",
 	InvalidScopeSelection: "Invalid scope selection.",
@@ -89,6 +91,7 @@ type InstallFlagValues struct {
 	Agents   []string
 	Yes      bool
 	DryRun   bool
+	Force    bool
 }
 
 type ParsedInstallFlags struct {
@@ -97,6 +100,7 @@ type ParsedInstallFlags struct {
 	Agents   AgentSelector
 	Yes      bool
 	DryRun   bool
+	Force    bool
 	Errors   []map[string]any
 }
 
@@ -118,7 +122,7 @@ func ParseInstallFlags(flags InstallFlagValues) ParsedInstallFlags {
 	errs = append(errs, scopeErrs...)
 	agents, agentErrs := AgentSelectorFromFlags(flags.Agents)
 	errs = append(errs, agentErrs...)
-	return ParsedInstallFlags{Scope: scope, ScopeSet: flags.ScopeSet || flags.Scope != "", Agents: agents, Yes: flags.Yes, DryRun: flags.DryRun, Errors: errs}
+	return ParsedInstallFlags{Scope: scope, ScopeSet: flags.ScopeSet || flags.Scope != "", Agents: agents, Yes: flags.Yes, DryRun: flags.DryRun, Force: flags.Force, Errors: errs}
 }
 
 func AgentSelectorFromFlags(values []string) (AgentSelector, []map[string]any) {
@@ -226,6 +230,7 @@ type InstallOptions struct {
 	SkillBundle SkillBundle
 	Scope       Scope
 	Agents      AgentSelector
+	Force       bool
 }
 
 type UninstallOptions struct {
@@ -740,14 +745,21 @@ func RunBundledSkillInstall(opts InstallWorkflowOptions) (InstallWorkflowReport,
 	if err != nil {
 		return InstallWorkflowReport{}, err
 	}
-	if !hasVisibleInstallPlan(plan) {
+	if len(plan.Installed)+len(plan.Updated)+len(plan.Conflicts)+len(plan.Errors) == 0 {
 		return InstallWorkflowReport{Selection: selection, Scope: scope, Plan: plan, Report: plan, DryRun: opts.DryRun}, nil
 	}
-	renderInstallSummary(out, plan)
 	if opts.DryRun {
+		renderInstallSummary(out, plan)
 		return InstallWorkflowReport{Selection: selection, Scope: scope, Plan: plan, Report: plan, DryRun: true}, nil
 	}
-	if !hasInstallWrites(plan) {
+	if len(plan.Conflicts)+len(plan.Errors) > 0 {
+		report := plan
+		report.Installed = []TargetResult{}
+		report.Updated = []TargetResult{}
+		return InstallWorkflowReport{Selection: selection, Scope: scope, Plan: plan, Report: report, DryRun: opts.DryRun}, nil
+	}
+	renderInstallSummary(out, plan)
+	if len(plan.Installed)+len(plan.Updated) == 0 {
 		return InstallWorkflowReport{Selection: selection, Scope: scope, Plan: plan, Report: plan}, nil
 	}
 	if selection.NeedsConfirmation {
@@ -827,8 +839,26 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 			}
 			report.Installed = append(report.Installed, result)
 		case !managed:
+			if opts.Force {
+				if write {
+					if err := replaceManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
+						return report, err
+					}
+				}
+				report.Updated = append(report.Updated, result)
+				continue
+			}
 			report.Conflicts = append(report.Conflicts, withReason(result, "unmanaged"))
 		case meta.AppID != opts.AppID:
+			if opts.Force {
+				if write {
+					if err := replaceManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
+						return report, err
+					}
+				}
+				report.Updated = append(report.Updated, result)
+				continue
+			}
 			report.Conflicts = append(report.Conflicts, withReason(result, "owner-mismatch"))
 		case meta.Hash == hash:
 			report.Skipped = append(report.Skipped, withReason(result, "unchanged"))
@@ -993,14 +1023,6 @@ func stringField(value map[string]any, key string) string {
 		return text
 	}
 	return ""
-}
-
-func hasVisibleInstallPlan(report InstallReport) bool {
-	return len(report.Installed)+len(report.Updated)+len(report.Conflicts)+len(report.Errors) > 0
-}
-
-func hasInstallWrites(report InstallReport) bool {
-	return len(report.Installed)+len(report.Updated) > 0
 }
 
 func resolveWorkflowScope(reader *bufio.Reader, out io.Writer, requested Scope, scopeSet, promptScope bool, defaultScope Scope, yes, stdinTTY bool) (Scope, InstallSelection, error) {

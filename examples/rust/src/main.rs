@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         skill_bundle: directory_bundle("../../skills/kitup"),
         scope: Scope::User,
         agents: AgentSelector::Auto,
+        force: false,
     })?;
 
     println!("{}", serde_json::to_string(&report)?);

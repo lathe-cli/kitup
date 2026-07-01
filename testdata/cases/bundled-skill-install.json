@@ -165,6 +165,7 @@
           "agentIds": [],
           "yes": false,
           "dryRun": false,
+          "force": false,
           "errors": []
         }
       }
@@ -180,7 +181,8 @@
           "codex"
         ],
         "yes": true,
-        "dryRun": true
+        "dryRun": true,
+        "force": true
       },
       "given": {
         "dirs": [],
@@ -197,6 +199,7 @@
           ],
           "yes": true,
           "dryRun": true,
+          "force": true,
           "errors": []
         }
       }
@@ -222,6 +225,7 @@
           "agentIds": [],
           "yes": false,
           "dryRun": false,
+          "force": false,
           "errors": []
         }
       }
@@ -249,6 +253,7 @@
           "agentIds": [],
           "yes": false,
           "dryRun": false,
+          "force": false,
           "errors": [
             {
               "flag": "scope",
@@ -901,6 +906,209 @@
             }
           ],
           "errors": []
+        }
+      }
+    },
+    {
+      "id": "workflow-conflict-blocks-writes",
+      "operation": "run-install-workflow",
+      "description": "Does not write any target when the plan mixes writable targets with conflicts.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex",
+          "claude-code"
+        ],
+        "stdinTTY": true,
+        "yes": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/SKILL.md": "---\nname: basic\ndescription: Unmanaged fixture.\n---\n\n# Basic\n"
+        }
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": false,
+          "code": "conflict",
+          "message": "Installation has conflicts."
+        },
+        "output": "",
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesAbsent": [
+          "$HOME/.claude/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-dry-run-conflict-renders-plan",
+      "operation": "run-install-workflow",
+      "description": "Dry-run renders writable plan items even when another target conflicts.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex",
+          "claude-code"
+        ],
+        "stdinTTY": true,
+        "yes": true,
+        "dryRun": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/SKILL.md": "---\nname: basic\ndescription: Unmanaged fixture.\n---\n\n# Basic\n"
+        }
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": true
+        },
+        "exit": {
+          "ok": false,
+          "code": "conflict",
+          "message": "Installation has conflicts."
+        },
+        "outputContains": [
+          "  - basic -> ",
+          "(claude-code)"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "claude-code",
+              "skillName": "basic",
+              "targetDir": "$HOME/.claude/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesAbsent": [
+          "$HOME/.claude/skills/basic/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "workflow-force-overwrites-conflicts",
+      "operation": "run-install-workflow",
+      "description": "Force turns unmanaged and different-owner targets into explicit updates.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex",
+          "claude-code"
+        ],
+        "stdinTTY": true,
+        "yes": true,
+        "force": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic",
+          "$HOME/.claude/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/SKILL.md": "---\nname: basic\ndescription: Unmanaged fixture.\n---\n\n# Basic\n",
+          "$HOME/.claude/skills/basic/SKILL.md": "---\nname: basic\ndescription: Other owner fixture.\n---\n\n# Basic\n",
+          "$HOME/.claude/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "other-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "sha256:old"
+          }
+        }
+      },
+      "expected": {
+        "workflow": {
+          "canceled": false,
+          "dryRun": false
+        },
+        "exit": {
+          "ok": true,
+          "code": "ok",
+          "message": ""
+        },
+        "outputContains": [
+          "(codex)",
+          "(claude-code)"
+        ],
+        "report": {
+          "installed": [],
+          "updated": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            },
+            {
+              "hostId": "claude-code",
+              "skillName": "basic",
+              "targetDir": "$HOME/.claude/skills/basic"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/SKILL.md",
+          "$HOME/.claude/skills/basic/SKILL.md"
+        ],
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          }
         }
       }
     },

@@ -23,6 +23,7 @@ export const installUxText = {
   agentFlag: "Target agent id. Repeat for multiple agents. Use '*' for all.",
   dryRunFlag: "Show install plan without writing",
   yesFlag: "Skip prompts and accept policy-selected targets",
+  forceFlag: "Overwrite unsafe target conflicts",
   selectScope: "Select install scope:",
   scopePrompt: "Scope (user/project)",
   invalidScopeSelection: "Invalid scope selection.",
@@ -84,6 +85,7 @@ export interface InstallOptions extends BaseOptions {
   skillBundle: SkillBundle;
   scope: Scope;
   agents?: AgentSelector;
+  force?: boolean;
 }
 
 export interface UninstallOptions extends BaseOptions {
@@ -119,6 +121,7 @@ export interface InstallFlagValues {
   agents?: string[];
   yes?: boolean;
   dryRun?: boolean;
+  force?: boolean;
 }
 
 export interface InstallFlagError {
@@ -133,6 +136,7 @@ export interface ParsedInstallFlags {
   agents: AgentSelector;
   yes: boolean;
   dryRun: boolean;
+  force: boolean;
   errors: InstallFlagError[];
 }
 
@@ -280,6 +284,7 @@ export function parseInstallFlags(
     agents,
     yes: Boolean(flags.yes),
     dryRun: Boolean(flags.dryRun),
+    force: Boolean(flags.force),
     errors,
   };
 }
@@ -581,7 +586,13 @@ export async function runBundledSkillInstall(
     agents: selection.selectedHostIds,
   };
   const plan = await planBundledSkill(installOptions);
-  if (!hasVisibleInstallPlan(plan)) {
+  if (
+    plan.installed.length +
+      plan.updated.length +
+      plan.conflicts.length +
+      plan.errors.length ===
+    0
+  ) {
     return {
       selection,
       scope,
@@ -591,9 +602,8 @@ export async function runBundledSkillInstall(
       dryRun: Boolean(options.dryRun),
     };
   }
-  renderInstallSummary(output, plan);
-
   if (options.dryRun) {
+    renderInstallSummary(output, plan);
     return {
       selection,
       scope,
@@ -604,7 +614,19 @@ export async function runBundledSkillInstall(
     };
   }
 
-  if (!hasInstallWrites(plan)) {
+  if (plan.conflicts.length + plan.errors.length > 0) {
+    return {
+      selection,
+      scope,
+      plan,
+      report: { ...plan, installed: [], updated: [] },
+      canceled: false,
+      dryRun: false,
+    };
+  }
+  renderInstallSummary(output, plan);
+
+  if (plan.installed.length + plan.updated.length === 0) {
     return {
       selection,
       scope,
@@ -1034,8 +1056,36 @@ async function installOrPlan(
       }
       report.installed.push(result);
     } else if (!metadata.value) {
+      if (options.force) {
+        if (write) {
+          await replaceManagedSkill(
+            bundle,
+            target.targetDir,
+            options.appId,
+            skill.skillName,
+            hash,
+            bundleMetadata,
+          );
+        }
+        report.updated.push(result);
+        continue;
+      }
       report.conflicts.push({ ...result, reason: "unmanaged" });
     } else if (metadata.value.appId !== options.appId) {
+      if (options.force) {
+        if (write) {
+          await replaceManagedSkill(
+            bundle,
+            target.targetDir,
+            options.appId,
+            skill.skillName,
+            hash,
+            bundleMetadata,
+          );
+        }
+        report.updated.push(result);
+        continue;
+      }
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
     } else if (metadata.value.hash === hash) {
       report.skipped.push({ ...result, reason: "unchanged" });
@@ -1189,20 +1239,6 @@ function targetResult(target: TargetGroup): TargetResult {
 
 function emptyInstallReport(errors: TargetError[] = []): InstallReport {
   return { installed: [], updated: [], skipped: [], conflicts: [], errors };
-}
-
-function hasVisibleInstallPlan(report: InstallReport) {
-  return (
-    report.installed.length +
-      report.updated.length +
-      report.conflicts.length +
-      report.errors.length >
-    0
-  );
-}
-
-function hasInstallWrites(report: InstallReport) {
-  return report.installed.length + report.updated.length > 0;
 }
 
 class LineReader {
