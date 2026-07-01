@@ -63,7 +63,12 @@ def test_compute_bundle_content_hash_ignores_kitup_metadata(tmp_path):
     (root / ".kitup.json").write_text('{"ignored": false}', encoding="utf-8")
     without_metadata = compute_bundle_content_hash(directory_bundle(str(root)))
 
-    expected = "sha256:" + hashlib.sha256(b"SKILL.md\x00" + _skill_md().encode("utf-8") + b"\x00").hexdigest()
+    expected = (
+        "sha256:"
+        + hashlib.sha256(
+            b"SKILL.md\x00" + _skill_md().encode("utf-8") + b"\x00"
+        ).hexdigest()
+    )
     assert with_metadata == without_metadata == expected
 
 
@@ -77,7 +82,12 @@ def test_compute_bundle_content_hash_ignores_editor_junk_files(tmp_path):
 
     digest = compute_bundle_content_hash(directory_bundle(str(root)))
 
-    expected = "sha256:" + hashlib.sha256(b"SKILL.md\x00" + _skill_md().encode("utf-8") + b"\x00").hexdigest()
+    expected = (
+        "sha256:"
+        + hashlib.sha256(
+            b"SKILL.md\x00" + _skill_md().encode("utf-8") + b"\x00"
+        ).hexdigest()
+    )
     assert digest == expected
 
 
@@ -114,7 +124,9 @@ def test_github_bundle_uses_fetched_relative_paths(monkeypatch):
         key = getattr(url, "full_url", url)
         payload = payloads.get(key)
         if payload is None:
-            raise AssertionError(f"unexpected network call: {key!r} timeout={timeout!r}")
+            raise AssertionError(
+                f"unexpected network call: {key!r} timeout={timeout!r}"
+            )
         return _Response(payload)
 
     monkeypatch.setattr("kitup._github.urllib.request.urlopen", fake_urlopen)
@@ -152,7 +164,9 @@ def test_validate_skill_bundle_rejects_duplicate_paths():
 
 
 def test_validate_skill_bundle_rejects_github_bundle_without_root_path():
-    bundle = github_bundle(GitHubBundleOptions(owner="acme", repo="skills", path="/", ref="main"))
+    bundle = github_bundle(
+        GitHubBundleOptions(owner="acme", repo="skills", path="/", ref="main")
+    )
 
     result = validate_skill_bundle(bundle)
 

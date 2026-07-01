@@ -38,7 +38,9 @@ from kitup.types import GitHubBundleOptions, SkillFile
 
 
 def test_golden_cases():
-    cases = json.loads(repo_path("testdata/cases/bundled-skill-install.json").read_text())["cases"]
+    cases = json.loads(
+        repo_path("testdata/cases/bundled-skill-install.json").read_text()
+    )["cases"]
     for case in cases:
         root = Path(tempfile.mkdtemp(prefix=f"kitup-{case['id']}-"))
         home = root / "home"
@@ -109,9 +111,14 @@ def run_case(case, home: Path, workspace: Path) -> None:
             expand_value(case["expected"].get("workflow"), home, workspace),
         )
         if "exit" in case["expected"]:
-            assert normalize_value(classify_install_workflow_exit(workflow)) == case["expected"]["exit"]
+            assert (
+                normalize_value(classify_install_workflow_exit(workflow))
+                == case["expected"]["exit"]
+            )
         assert_output(output_stream.getvalue(), case["expected"].get("output"))
-        assert_output_contains(output_stream.getvalue(), case["expected"].get("outputContains"))
+        assert_output_contains(
+            output_stream.getvalue(), case["expected"].get("outputContains")
+        )
         if "report" in case["expected"]:
             assert normalize_value(workflow.report) == camel_to_snake_dict(
                 expand_value(case["expected"]["report"], home, workspace)
@@ -144,7 +151,9 @@ def run_case(case, home: Path, workspace: Path) -> None:
 def run_report_case(case, home: Path, workspace: Path):
     operation = case["operation"]
     if operation == "uninstall":
-        return uninstall_bundled_skill(uninstall_options_from_case(case, home, workspace))
+        return uninstall_bundled_skill(
+            uninstall_options_from_case(case, home, workspace)
+        )
     install_options = install_options_from_case(case, home, workspace)
     if operation == "update":
         return update_bundled_skill(install_options)
@@ -200,7 +209,9 @@ def assert_selection(actual, expected) -> None:
         actual_value.pop("selected_host_ids")
         expected_value.pop("selectedCount")
     if "candidateCount" in expected_value:
-        assert len(actual_value["candidate_host_ids"]) == expected_value["candidateCount"]
+        assert (
+            len(actual_value["candidate_host_ids"]) == expected_value["candidateCount"]
+        )
         actual_value.pop("candidate_host_ids")
         expected_value.pop("candidateCount")
     assert actual_value == camel_to_snake_dict(expected_value)
@@ -247,9 +258,13 @@ def write_metadata_fixture(case, home: Path, workspace: Path, metadata) -> None:
 
 def expected_bundle_hash(case, marker: str) -> str:
     if marker == "from-skill-bundle-dir":
-        return compute_bundle_content_hash(directory_bundle(str(case_skill_bundle_dir(case))))
+        return compute_bundle_content_hash(
+            directory_bundle(str(case_skill_bundle_dir(case)))
+        )
     if marker == "from-skill-files":
-        return compute_bundle_content_hash(files_bundle(skill_files(case["options"]["skillFiles"])))
+        return compute_bundle_content_hash(
+            files_bundle(skill_files(case["options"]["skillFiles"]))
+        )
     if marker == "from-github-bundle":
         return compute_bundle_content_hash(files_bundle(github_skill_files(case)))
     return marker
@@ -286,7 +301,9 @@ def start_github_fixture(github):
                             {
                                 "path": file_path,
                                 "type": "blob",
-                                "mode": "100755" if file_path.endswith(".sh") else "100644",
+                                "mode": "100755"
+                                if file_path.endswith(".sh")
+                                else "100644",
                             }
                             for file_path in files
                         ]
@@ -372,7 +389,9 @@ def uninstall_options_from_case(case, home: Path, workspace: Path) -> UninstallO
     )
 
 
-def selection_options_from_case(case, home: Path, workspace: Path) -> InstallSelectionOptions:
+def selection_options_from_case(
+    case, home: Path, workspace: Path
+) -> InstallSelectionOptions:
     return InstallSelectionOptions(
         base=BaseOptions(
             home=str(home),
@@ -387,7 +406,9 @@ def selection_options_from_case(case, home: Path, workspace: Path) -> InstallSel
     )
 
 
-def workflow_options_from_case(case, home: Path, workspace: Path) -> InstallWorkflowOptions:
+def workflow_options_from_case(
+    case, home: Path, workspace: Path
+) -> InstallWorkflowOptions:
     return InstallWorkflowOptions(
         install=install_options_from_case(case, home, workspace),
         yes=case["options"].get("yes", False),
@@ -420,8 +441,7 @@ def skill_bundle_from_case(case) -> object:
 
 def skill_files(values) -> list[SkillFile]:
     return [
-        SkillFile(path=value["path"], contents=value["contents"])
-        for value in values
+        SkillFile(path=value["path"], contents=value["contents"]) for value in values
     ]
 
 
@@ -462,9 +482,7 @@ def expand_value(value, home: Path, workspace: Path):
 
 
 def expand_path(value: str, home: Path, workspace: Path) -> Path:
-    return Path(
-        value.replace("$HOME", str(home)).replace("$WORKSPACE", str(workspace))
-    )
+    return Path(value.replace("$HOME", str(home)).replace("$WORKSPACE", str(workspace)))
 
 
 def normalize_value(value):
@@ -501,8 +519,7 @@ def camel_to_snake_dict(value):
     if not isinstance(value, dict):
         return value
     return {
-        camel_to_snake(key): camel_to_snake_dict(item)
-        for key, item in value.items()
+        camel_to_snake(key): camel_to_snake_dict(item) for key, item in value.items()
     }
 
 

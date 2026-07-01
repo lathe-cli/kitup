@@ -8,7 +8,6 @@ from .hosts import detect_hosts, load_host_spec, resolve_hosts
 from .install import install_bundled_skill, plan_bundled_skill
 from .types import (
     INSTALL_UX,
-    InstallOptions,
     InstallReport,
     InstallSelection,
     InstallSelectionOptions,
@@ -136,9 +135,13 @@ def resolve_install_selection(options: InstallSelectionOptions) -> InstallSelect
     return _select_agents_selection(detected_host_ids, detected_host_ids, [])
 
 
-def classify_install_workflow_exit(report: InstallWorkflowReport | dict[str, object]) -> InstallWorkflowExit:
+def classify_install_workflow_exit(
+    report: InstallWorkflowReport | dict[str, object],
+) -> InstallWorkflowExit:
     if _workflow_value(report, "canceled"):
-        return InstallWorkflowExit(ok=False, code="canceled", message=INSTALL_UX["canceled"])
+        return InstallWorkflowExit(
+            ok=False, code="canceled", message=INSTALL_UX["canceled"]
+        )
     selection = _workflow_value(report, "selection")
     if _workflow_value(selection, "errors"):
         return InstallWorkflowExit(
@@ -167,10 +170,14 @@ def install_flag_error(errors: list[dict[str, str]]) -> Exception | None:
 
 
 def install_workflow_error(
-    report: InstallWorkflowReport | dict[str, object]
+    report: InstallWorkflowReport | dict[str, object],
 ) -> Exception | None:
     exit_info = classify_install_workflow_exit(report)
-    return None if exit_info.ok or exit_info.code == "canceled" else KitupError(exit_info.message)
+    return (
+        None
+        if exit_info.ok or exit_info.code == "canceled"
+        else KitupError(exit_info.message)
+    )
 
 
 def run_bundled_skill_install(options: InstallWorkflowOptions) -> InstallWorkflowReport:
@@ -371,7 +378,9 @@ def _prompt_agent_selection(
         current = ",".join(selection.selected_host_ids)
         suffix = f" [{current}]" if current else ""
         output.write(f"{INSTALL_UX['agents_prompt']}{suffix}: ")
-        selected = _parse_agent_selection(reader.read_line() or "", selection, candidates)
+        selected = _parse_agent_selection(
+            reader.read_line() or "", selection, candidates
+        )
         if selected is not None:
             return selected
         _write_line(output, INSTALL_UX["invalid_agent_selection"])
@@ -414,7 +423,9 @@ def _prompt_confirmation(reader: "_LineReader", output: "_OutputWriter") -> bool
 def _render_install_summary(output: "_OutputWriter", report: InstallReport) -> None:
     for item in [*report.installed, *report.updated]:
         for host_id in _summary_hosts(item):
-            _write_line(output, f"  - {item.skill_name} -> {item.target_dir} ({host_id})")
+            _write_line(
+                output, f"  - {item.skill_name} -> {item.target_dir} ({host_id})"
+            )
 
 
 def _summary_hosts(item: object) -> list[str]:
@@ -425,7 +436,9 @@ def _summary_hosts(item: object) -> list[str]:
     return list(host_ids or [])
 
 
-def _render_selection_errors(output: "_OutputWriter", selection: InstallSelection) -> None:
+def _render_selection_errors(
+    output: "_OutputWriter", selection: InstallSelection
+) -> None:
     for error in selection.errors:
         _write_line(output, f"{INSTALL_UX['error_prefix']} {error['reason']}")
 

@@ -95,7 +95,9 @@ def compute_normalized_bundle_content_hash(normalized: NormalizedSkillBundle) ->
     return f"sha256:{digest.hexdigest()}"
 
 
-def normalize_skill_bundle(bundle: SkillBundle, cwd: str | None = None) -> NormalizedSkillBundle:
+def normalize_skill_bundle(
+    bundle: SkillBundle, cwd: str | None = None
+) -> NormalizedSkillBundle:
     if isinstance(bundle, DirectoryBundle):
         return normalize_directory_bundle(bundle.path, cwd=cwd)
     if isinstance(bundle, FilesBundle):
@@ -105,7 +107,9 @@ def normalize_skill_bundle(bundle: SkillBundle, cwd: str | None = None) -> Norma
     raise KitupError(f"unsupported bundle: {type(bundle)!r}")
 
 
-def normalize_directory_bundle(path: str, cwd: str | None = None) -> NormalizedSkillBundle:
+def normalize_directory_bundle(
+    path: str, cwd: str | None = None
+) -> NormalizedSkillBundle:
     root = resolve_path(path, cwd=cwd)
     if not root.is_dir():
         raise KitupError(f"invalid bundle directory: {root}")

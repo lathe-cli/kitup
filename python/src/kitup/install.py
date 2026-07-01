@@ -39,7 +39,9 @@ def expand_host_path(path: str, *, home: Path, cwd: Path) -> Path:
     return cwd / path
 
 
-def choose_scope_path(host: Host, *, scope: Scope, home: Path, cwd: Path) -> Path | None:
+def choose_scope_path(
+    host: Host, *, scope: Scope, home: Path, cwd: Path
+) -> Path | None:
     paths = host.user_skills_dirs if scope == "user" else host.project_skills_dirs
     for path in paths:
         expanded = expand_host_path(path, home=home, cwd=cwd)
@@ -56,7 +58,9 @@ def resolve_install_targets(
     scope: Scope,
     skill_name: str,
 ) -> list[TargetGroup]:
-    targets, _ = _resolve_install_targets_with_errors(options, agents, scope, skill_name)
+    targets, _ = _resolve_install_targets_with_errors(
+        options, agents, scope, skill_name
+    )
     return targets
 
 
@@ -181,7 +185,9 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
 
     info = validate_normalized_skill_bundle(normalized)
     if not info.valid or not info.skill_name:
-        return empty_install_report([TargetError(reason=info.error_code or "invalid-skill-bundle")])
+        return empty_install_report(
+            [TargetError(reason=info.error_code or "invalid-skill-bundle")]
+        )
 
     digest = compute_normalized_bundle_content_hash(normalized)
     targets, errors = _resolve_install_targets_with_errors(
@@ -225,15 +231,15 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
             continue
 
         if write:
-                write_managed_bundle(
-                    target_dir,
-                    app_id=options.app_id,
-                    skill_name=info.skill_name,
-                    digest=digest,
-                    metadata=bundle_metadata,
-                    files=normalized.files,
-                    replace=True,
-                )
+            write_managed_bundle(
+                target_dir,
+                app_id=options.app_id,
+                skill_name=info.skill_name,
+                digest=digest,
+                metadata=bundle_metadata,
+                files=normalized.files,
+                replace=True,
+            )
         report.updated.append(result)
 
     return report
@@ -272,9 +278,13 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
     return report
 
 
-def _resolve_bundle_and_metadata(skill_bundle: object, *, cwd: str | None) -> tuple[object, dict[str, object]]:
+def _resolve_bundle_and_metadata(
+    skill_bundle: object, *, cwd: str | None
+) -> tuple[object, dict[str, object]]:
     if isinstance(skill_bundle, DirectoryBundle):
-        return normalize_directory_bundle(skill_bundle.path, cwd=cwd), {"source": "bundled"}
+        return normalize_directory_bundle(skill_bundle.path, cwd=cwd), {
+            "source": "bundled"
+        }
     if isinstance(skill_bundle, FilesBundle):
         return normalize_files_bundle(skill_bundle.files), {"source": "bundled"}
     if isinstance(skill_bundle, GitHubBundle):
@@ -297,7 +307,10 @@ def _resolve_install_targets_with_errors(
         errors: list[TargetError] = []
     else:
         selected, resolution_errors = resolve_hosts(agents, spec.hosts)
-        errors = [TargetError(reason=error["reason"], agent=error["agent"]) for error in resolution_errors]
+        errors = [
+            TargetError(reason=error["reason"], agent=error["agent"])
+            for error in resolution_errors
+        ]
 
     by_target: dict[str, TargetGroup] = {}
     for host in selected:

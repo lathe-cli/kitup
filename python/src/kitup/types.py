@@ -46,11 +46,14 @@ class SkillInfo:
     valid: bool
     skill_name: str | None = None
     description: str | None = None
-    error_code: Literal[
-        "missing-skill-md",
-        "invalid-frontmatter",
-        "invalid-skill-bundle",
-    ] | None = None
+    error_code: (
+        Literal[
+            "missing-skill-md",
+            "invalid-frontmatter",
+            "invalid-skill-bundle",
+        ]
+        | None
+    ) = None
 
 
 @dataclass(frozen=True)

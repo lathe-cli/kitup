@@ -42,10 +42,9 @@ def test_resolve_install_targets_prefers_first_existing_user_dir(tmp_path):
         "basic",
     )
 
-    assert [
-        (target.host_ids, target.target_dir)
-        for target in targets
-    ] == [(["codex"], str(home / ".agents" / "skills" / "basic"))]
+    assert [(target.host_ids, target.target_dir) for target in targets] == [
+        (["codex"], str(home / ".agents" / "skills" / "basic"))
+    ]
 
 
 def test_resolve_install_targets_groups_hosts_by_shared_target_dir(tmp_path):
@@ -62,10 +61,7 @@ def test_resolve_install_targets_groups_hosts_by_shared_target_dir(tmp_path):
         "basic",
     )
 
-    assert [
-        (target.host_ids, target.target_dir)
-        for target in targets
-    ] == [
+    assert [(target.host_ids, target.target_dir) for target in targets] == [
         (
             ["codex", "warp", "gemini-cli"],
             str(home / ".agents" / "skills" / "basic"),
@@ -117,10 +113,7 @@ def test_resolve_install_targets_auto_detects_supported_hosts(tmp_path):
         "basic",
     )
 
-    assert [
-        (target.host_ids, target.target_dir)
-        for target in targets
-    ] == [
+    assert [(target.host_ids, target.target_dir) for target in targets] == [
         (["codex"], str(home / ".agents" / "skills" / "basic")),
         (["claude-code"], str(home / ".claude" / "skills" / "basic")),
     ]
@@ -198,10 +191,18 @@ def test_install_update_uninstall_round_trip(tmp_path):
     assert len(install_report.installed) == 1
 
     target = home / ".agents" / "skills" / "basic"
-    assert (target / "SKILL.md").read_text(encoding="utf-8").startswith("---\nname: basic\n")
-    assert (target / "bin" / "run.sh").read_text(encoding="utf-8") == "#!/bin/sh\necho updated\n"
+    assert (
+        (target / "SKILL.md")
+        .read_text(encoding="utf-8")
+        .startswith("---\nname: basic\n")
+    )
+    assert (target / "bin" / "run.sh").read_text(
+        encoding="utf-8"
+    ) == "#!/bin/sh\necho updated\n"
     assert (target / "bin" / "run.sh").stat().st_mode & 0o777 == 0o755
-    assert (target / "legacy.txt").read_text(encoding="utf-8") == "remove me on update\n"
+    assert (target / "legacy.txt").read_text(
+        encoding="utf-8"
+    ) == "remove me on update\n"
     assert json.loads((target / ".kitup.json").read_text(encoding="utf-8")) == {
         "schemaVersion": 1,
         "appId": "kitup-python-test",
@@ -216,7 +217,9 @@ def test_install_update_uninstall_round_trip(tmp_path):
     update_report = update_bundled_skill(install_options)
 
     assert len(update_report.updated) == 1
-    assert (target / "bin" / "run.sh").read_text(encoding="utf-8") == "#!/bin/sh\necho second\n"
+    assert (target / "bin" / "run.sh").read_text(
+        encoding="utf-8"
+    ) == "#!/bin/sh\necho second\n"
     assert not (target / "legacy.txt").exists()
 
     unchanged_report = update_bundled_skill(install_options)

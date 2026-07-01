@@ -28,7 +28,9 @@ def write_install_metadata(
         payload["version"] = version
     if provenance is not None:
         payload["provenance"] = provenance
-    (target_dir / ".kitup.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    (target_dir / ".kitup.json").write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def read_install_metadata(target_dir: Path) -> dict[str, object] | None:

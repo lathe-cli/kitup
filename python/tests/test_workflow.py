@@ -111,7 +111,9 @@ def test_resolve_install_selection_requires_agents_without_tty_or_yes(tmp_path):
 
     selection = resolve_install_selection(
         InstallSelectionOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)),
+            base=BaseOptions(
+                home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)
+            ),
             scope="user",
             stdin_tty=False,
             yes=False,
@@ -155,7 +157,9 @@ def test_resolve_install_selection_tty_prompts_for_multiple_detected_hosts(tmp_p
 
     selection = resolve_install_selection(
         InstallSelectionOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)),
+            base=BaseOptions(
+                home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)
+            ),
             scope="user",
             stdin_tty=True,
             yes=False,
@@ -192,7 +196,9 @@ def test_resolve_install_selection_explicit_agents_with_unknown_host_is_pure_err
 
     selection = resolve_install_selection(
         InstallSelectionOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)),
+            base=BaseOptions(
+                home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)
+            ),
             scope="user",
             agents=["codex", "missing-agent"],
             stdin_tty=False,
@@ -222,21 +228,30 @@ def test_classify_install_workflow_exit_reports_conflict():
 
 
 def test_error_helpers_map_flag_and_workflow_failures():
-    assert str(install_flag_error([{"reason": "invalid-scope"}])) == "Invalid install flags."
-    assert install_workflow_error(
-        {
-            "canceled": False,
-            "selection": {"errors": [{"reason": "scope-selection-required"}]},
-            "report": {"conflicts": [], "errors": []},
-        }
-    ).args[0] == "Agent selection failed."
-    assert install_workflow_error(
-        {
-            "canceled": True,
-            "selection": {"errors": []},
-            "report": {"conflicts": [], "errors": []},
-        }
-    ) is None
+    assert (
+        str(install_flag_error([{"reason": "invalid-scope"}]))
+        == "Invalid install flags."
+    )
+    assert (
+        install_workflow_error(
+            {
+                "canceled": False,
+                "selection": {"errors": [{"reason": "scope-selection-required"}]},
+                "report": {"conflicts": [], "errors": []},
+            }
+        ).args[0]
+        == "Agent selection failed."
+    )
+    assert (
+        install_workflow_error(
+            {
+                "canceled": True,
+                "selection": {"errors": []},
+                "report": {"conflicts": [], "errors": []},
+            }
+        )
+        is None
+    )
 
 
 def test_run_bundled_skill_install_scope_prompt_and_top_level_exports(tmp_path):
@@ -320,7 +335,9 @@ def test_plan_bundled_skill_uses_single_github_snapshot(monkeypatch, tmp_path):
     def unexpected_refetch(_options):
         raise AssertionError("bundle was re-fetched after snapshot resolution")
 
-    monkeypatch.setattr("kitup.install.fetch_github_directory_with_metadata", fake_fetch_with_metadata)
+    monkeypatch.setattr(
+        "kitup.install.fetch_github_directory_with_metadata", fake_fetch_with_metadata
+    )
     monkeypatch.setattr("kitup.bundle.fetch_github_directory", unexpected_refetch)
 
     report = plan_bundled_skill(
