@@ -13,8 +13,13 @@ pip install kitup
 Use the workflow API for user-facing install commands:
 
 ```python
-from kitup import directory_bundle, run_bundled_skill_install
-from kitup.types import BaseOptions, InstallOptions, InstallWorkflowOptions
+from kitup import (
+    BaseOptions,
+    InstallOptions,
+    InstallWorkflowOptions,
+    directory_bundle,
+    run_bundled_skill_install,
+)
 
 workflow = run_bundled_skill_install(
     InstallWorkflowOptions(

@@ -217,6 +217,9 @@ Package: `kitup`
 
 ```python
 from kitup import (
+    BaseOptions,
+    InstallOptions,
+    InstallWorkflowOptions,
     classify_install_workflow_exit,
     compute_bundle_content_hash,
     detect_hosts,
@@ -243,8 +246,7 @@ from kitup import (
 Primitive install call:
 
 ```python
-from kitup import directory_bundle, install_bundled_skill
-from kitup.types import BaseOptions, InstallOptions
+from kitup import BaseOptions, InstallOptions, directory_bundle, install_bundled_skill
 
 report = install_bundled_skill(
     InstallOptions(
@@ -259,8 +261,13 @@ report = install_bundled_skill(
 Workflow call:
 
 ```python
-from kitup import directory_bundle, run_bundled_skill_install
-from kitup.types import BaseOptions, InstallOptions, InstallWorkflowOptions
+from kitup import (
+    BaseOptions,
+    InstallOptions,
+    InstallWorkflowOptions,
+    directory_bundle,
+    run_bundled_skill_install,
+)
 
 workflow = run_bundled_skill_install(
     InstallWorkflowOptions(

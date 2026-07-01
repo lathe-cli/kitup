@@ -15,6 +15,7 @@ PYTHON_DIR := python
 EXAMPLE_TS_DIR := examples/ts
 EXAMPLE_GO_DIR := examples/go
 EXAMPLE_RUST_DIR := examples/rust
+EXAMPLE_PYTHON_DIR := examples/python
 GO_FILES := $(shell find $(GO_DIR) $(GO_COBRA_DIR) $(EXAMPLE_GO_DIR) -name '*.go' -type f)
 
 # ── Quality ──────────────────────────────────────────────────────────────────
