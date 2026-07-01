@@ -91,6 +91,7 @@ Do not publish packages from a pull request.
 Use `make release-patch`, `make release-minor`, or `make release-major` from a clean, up-to-date `main` branch to create the release branch and version commit. Open and merge the release PR manually, then tag `main` manually. The release workflow publishes:
 
 - `@kitup/sdk`
+- `kitup` on PyPI
 - `kitup` on crates.io
 - `github.com/lathe-cli/kitup/go` through the `go/vX.Y.Z` tag
 - `github.com/lathe-cli/kitup/go-cobra` through the `go-cobra/vX.Y.Z` tag

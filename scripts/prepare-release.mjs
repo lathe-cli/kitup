@@ -28,6 +28,7 @@ const cargoPath = "rust/Cargo.toml";
 const goCobraModPath = "go-cobra/go.mod";
 const rustLockPath = "rust/Cargo.lock";
 const exampleRustLockPath = "examples/rust/Cargo.lock";
+const pythonPackagePath = "python/pyproject.toml";
 const pkg = JSON.parse(read(packagePath));
 const currentVersion = pkg.version;
 const nextVersion = bumpVersion(currentVersion, bump);
@@ -39,6 +40,7 @@ const changedFiles = [
   rustLockPath,
   exampleRustLockPath,
   goCobraModPath,
+  pythonPackagePath,
 ];
 
 if (!dryRun) {
@@ -49,6 +51,11 @@ if (!dryRun) {
 pkg.version = nextVersion;
 write(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
 replaceOne(cargoPath, /^version = "([^"]+)"$/m, `version = "${nextVersion}"`);
+replaceOne(
+  pythonPackagePath,
+  /^version = "([^"]+)"$/m,
+  `version = "${nextVersion}"`,
+);
 replaceOne(
   goCobraModPath,
   /(github\.com\/lathe-cli\/kitup\/go\s+)v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/,

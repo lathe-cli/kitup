@@ -97,7 +97,23 @@ GO
 	go run .
 }
 
+smoke_python() {
+	dir="$(mktemp -d "$tmp/python.XXXXXX")"
+	cd "$dir"
+	python -m venv .venv
+	. .venv/bin/activate
+	python -m pip install "kitup==$version" >/dev/null
+	python - <<'PY'
+from kitup import load_host_spec
+
+spec = load_host_spec()
+assert len(spec.hosts) == 72
+print(f"python ok: {len(spec.hosts)}")
+PY
+}
+
 retry npm smoke_npm
 retry rust smoke_rust
 retry go smoke_go
 retry go-cobra smoke_go_cobra
+retry python smoke_python

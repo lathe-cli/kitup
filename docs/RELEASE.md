@@ -1,8 +1,9 @@
 # Release
 
-`kitup` publishes one version across four package surfaces:
+`kitup` publishes one version across five package surfaces:
 
 - npm: `@kitup/sdk`
+- PyPI: `kitup`
 - crates.io: `kitup`
 - Go module: `github.com/lathe-cli/kitup/go`
 - Go Cobra adapter: `github.com/lathe-cli/kitup/go-cobra`
@@ -29,6 +30,7 @@ make release-major
 The release target creates `release/vX.Y.Z`, updates:
 
 - `ts/package.json`
+- `python/pyproject.toml`
 - `rust/Cargo.toml`
 - `rust/Cargo.lock`
 - `examples/rust/Cargo.lock`
@@ -51,7 +53,7 @@ git push origin vX.Y.Z
 
 Do not tag the release branch. Do not publish packages by hand during the normal flow.
 
-The release workflow publishes npm and crates.io packages, creates the `go/vX.Y.Z` and `go-cobra/vX.Y.Z` tags, creates the GitHub Release, and runs the public install smoke check.
+The release workflow publishes npm, PyPI, and crates.io packages, creates the `go/vX.Y.Z` and `go-cobra/vX.Y.Z` tags, creates the GitHub Release, and runs the public install smoke check.
 
 ## First npm Release
 
@@ -64,13 +66,14 @@ cd ts
 npm publish --access public
 ```
 
-Then rerun the failed release workflow. The workflow detects already-published npm and crate versions and skips them.
+Then rerun the failed release workflow. The workflow detects already-published npm, PyPI, and crate versions and skips them.
 
 ## Recovery
 
 The release workflow is resumable:
 
 - If npm already has the version, npm publish is skipped.
+- If PyPI already has the version, Python build and publish are skipped.
 - If crates.io already has the version, crate publish is skipped.
 - If `go/vX.Y.Z` or `go-cobra/vX.Y.Z` already exists, the workflow verifies that it points at the release commit.
 
@@ -84,4 +87,4 @@ Run the public install smoke check manually with:
 scripts/smoke-release.sh X.Y.Z
 ```
 
-The smoke check installs from npm, crates.io, the public Go module, and the public Go Cobra adapter, then verifies that each SDK can load the default host spec or instantiate its adapter.
+The smoke check installs from npm, PyPI, crates.io, the public Go module, and the public Go Cobra adapter, then verifies that each SDK can load the default host spec or instantiate its adapter.
