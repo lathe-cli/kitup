@@ -39,7 +39,7 @@ def read_install_metadata(target_dir: Path) -> dict[str, object] | None:
         return None
     try:
         payload = json.loads(metadata_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     if not isinstance(payload, dict):
         return None
