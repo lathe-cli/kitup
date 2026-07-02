@@ -81,6 +81,7 @@ def parse_install_flags(flags: dict[str, object]) -> ParsedInstallFlags:
         agents=agent_selector_from_flags(_coerce_flag_values(agents), errors),
         yes=bool(flags.get("yes")),
         dry_run=bool(flags.get("dryRun")),
+        force=bool(flags.get("force")),
         errors=errors,
     )
 
@@ -277,8 +278,8 @@ def run_bundled_skill_install_with_io(
             dry_run=options.dry_run,
         )
 
-    _render_install_summary(writer, plan)
     if options.dry_run:
+        _render_install_summary(writer, plan)
         return InstallWorkflowReport(
             selection=selection,
             scope=scope,
@@ -287,6 +288,16 @@ def run_bundled_skill_install_with_io(
             canceled=False,
             dry_run=True,
         )
+    if len(plan.conflicts) + len(plan.errors) > 0:
+        return InstallWorkflowReport(
+            selection=selection,
+            scope=scope,
+            plan=plan,
+            report=replace(plan, installed=[], updated=[]),
+            canceled=False,
+            dry_run=False,
+        )
+    _render_install_summary(writer, plan)
     if not _has_install_writes(plan):
         return InstallWorkflowReport(
             selection=selection,

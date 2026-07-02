@@ -218,13 +218,52 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
             continue
 
         if metadata is None and metadata_file.exists():
-            report.conflicts.append(target_status(target, "unmanaged"))
+            if options.force:
+                if write:
+                    write_managed_bundle(
+                        target_dir,
+                        app_id=options.app_id,
+                        skill_name=info.skill_name,
+                        digest=digest,
+                        metadata=bundle_metadata,
+                        files=normalized.files,
+                        replace=True,
+                    )
+                report.updated.append(result)
+            else:
+                report.conflicts.append(target_status(target, "unmanaged"))
             continue
         if metadata is None:
-            report.conflicts.append(target_status(target, "unmanaged"))
+            if options.force:
+                if write:
+                    write_managed_bundle(
+                        target_dir,
+                        app_id=options.app_id,
+                        skill_name=info.skill_name,
+                        digest=digest,
+                        metadata=bundle_metadata,
+                        files=normalized.files,
+                        replace=True,
+                    )
+                report.updated.append(result)
+            else:
+                report.conflicts.append(target_status(target, "unmanaged"))
             continue
         if metadata.get("appId") != options.app_id:
-            report.conflicts.append(target_status(target, "owner-mismatch"))
+            if options.force:
+                if write:
+                    write_managed_bundle(
+                        target_dir,
+                        app_id=options.app_id,
+                        skill_name=info.skill_name,
+                        digest=digest,
+                        metadata=bundle_metadata,
+                        files=normalized.files,
+                        replace=True,
+                    )
+                report.updated.append(result)
+            else:
+                report.conflicts.append(target_status(target, "owner-mismatch"))
             continue
         if metadata.get("hash") == digest:
             report.skipped.append(target_status(target, "unchanged"))

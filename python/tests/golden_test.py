@@ -372,6 +372,7 @@ def install_options_from_case(case, home: Path, workspace: Path) -> InstallOptio
         skill_bundle=skill_bundle_from_case(case),
         scope=case["options"].get("scope", "user"),
         agents=case["options"].get("agents", "auto"),
+        force=case["options"].get("force", False),
     )
 
 
@@ -509,6 +510,7 @@ def normalize_parsed_flags(parsed: ParsedInstallFlags) -> dict[str, object]:
         "agentIds": parsed.agents if isinstance(parsed.agents, list) else [],
         "yes": parsed.yes,
         "dryRun": parsed.dry_run,
+        "force": parsed.force,
         "errors": parsed.errors,
     }
 

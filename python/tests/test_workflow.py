@@ -46,6 +46,7 @@ def test_parse_install_flags_defaults_to_user_auto():
     assert parsed.agents == "auto"
     assert parsed.yes is False
     assert parsed.dry_run is False
+    assert parsed.force is False
     assert parsed.errors == []
 
 
@@ -56,6 +57,7 @@ def test_parse_install_flags_explicit_scope_agents_and_errors():
             "agents": ["*", "codex,claude-code"],
             "yes": True,
             "dryRun": True,
+            "force": True,
         }
     )
 
@@ -64,6 +66,7 @@ def test_parse_install_flags_explicit_scope_agents_and_errors():
     assert parsed.agents == "*"
     assert parsed.yes is True
     assert parsed.dry_run is True
+    assert parsed.force is True
     assert parsed.errors == [
         {"flag": "scope", "reason": "invalid-scope", "value": "global"},
         {

@@ -287,6 +287,71 @@ def test_install_lifecycle_reports_owner_mismatch_and_missing(tmp_path):
     assert missing_report.skipped[0].reason == "missing"
 
 
+def test_install_force_overwrites_unmanaged_and_owner_mismatch(tmp_path):
+    skill = tmp_path / "skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: basic\ndescription: demo\n---\n",
+        encoding="utf-8",
+    )
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    home.mkdir()
+    workspace.mkdir()
+
+    codex_target = home / ".agents" / "skills" / "basic"
+    codex_target.mkdir(parents=True)
+    (codex_target / "SKILL.md").write_text(
+        "---\nname: basic\ndescription: unmanaged\n---\n",
+        encoding="utf-8",
+    )
+
+    claude_target = home / ".claude" / "skills" / "basic"
+    claude_target.mkdir(parents=True)
+    (claude_target / "SKILL.md").write_text(
+        "---\nname: basic\ndescription: other owner\n---\n",
+        encoding="utf-8",
+    )
+    (claude_target / ".kitup.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "appId": "other-app",
+                "skillName": "basic",
+                "source": "bundled",
+                "hash": "sha256:old",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = install_bundled_skill(
+        InstallOptions(
+            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            app_id="kitup-python-test",
+            skill_bundle=directory_bundle(str(skill)),
+            scope="user",
+            agents=["codex", "claude-code"],
+            force=True,
+        )
+    )
+
+    assert [(item.host_id, item.target_dir) for item in report.updated] == [
+        ("codex", str(codex_target)),
+        ("claude-code", str(claude_target)),
+    ]
+    assert report.conflicts == []
+    assert (
+        json.loads((codex_target / ".kitup.json").read_text(encoding="utf-8"))["appId"]
+        == "kitup-python-test"
+    )
+    assert (
+        json.loads((claude_target / ".kitup.json").read_text(encoding="utf-8"))["appId"]
+        == "kitup-python-test"
+    )
+
+
 def test_install_lifecycle_is_re_exported_from_top_level_package():
     assert kitup.directory_bundle is directory_bundle
     assert kitup.plan_bundled_skill is plan_bundled_skill

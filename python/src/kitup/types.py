@@ -92,6 +92,7 @@ class InstallOptions:
     skill_bundle: object
     scope: Scope
     agents: str | list[str] = "auto"
+    force: bool = False
 
 
 @dataclass(frozen=True)
@@ -200,6 +201,7 @@ class ParsedInstallFlags:
     agents: str | list[str]
     yes: bool
     dry_run: bool
+    force: bool
     errors: list[dict[str, str]]
 
 
