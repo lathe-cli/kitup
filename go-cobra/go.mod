@@ -3,7 +3,7 @@ module github.com/lathe-cli/kitup/go-cobra
 go 1.23
 
 require (
-	github.com/lathe-cli/kitup/go v0.1.2
+	github.com/lathe-cli/kitup/go v0.1.3
 	github.com/spf13/cobra v1.9.1
 )
 
