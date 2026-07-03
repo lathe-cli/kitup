@@ -5,7 +5,7 @@ Shared installer SDK for bundled Agent Skills.
 ## Install
 
 ```bash
-pip install kitup
+pip install kitup-sdk
 ```
 
 ## Use

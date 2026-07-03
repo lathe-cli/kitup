@@ -213,7 +213,7 @@ Implemented functions:
 
 ## Python
 
-Package: `kitup`
+Package: `kitup-sdk`
 
 ```python
 from kitup import (

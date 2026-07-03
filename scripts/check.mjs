@@ -8,7 +8,11 @@ const root = new URL("../", import.meta.url);
 const rootPath = fileURLToPath(root);
 
 function readJson(path) {
-  return JSON.parse(readFileSync(new URL(path, root), "utf8"));
+  return JSON.parse(readText(path));
+}
+
+function readText(path) {
+  return readFileSync(new URL(path, root), "utf8");
 }
 
 function fail(message) {
@@ -186,6 +190,82 @@ function validateFixtures() {
   readJson("testdata/skills/basic/assets/template.json");
 }
 
+function matchOne(path, pattern, label) {
+  const match = readText(path).match(pattern);
+  assert(match, `missing ${label}`);
+  return match[1];
+}
+
+function validateVersions() {
+  const version = readJson("ts/package.json").version;
+  assert(
+    matchOne("rust/Cargo.toml", /^version = "([^"]+)"$/m, "rust version") ===
+      version,
+    "rust version drifted",
+  );
+  assert(
+    matchOne(
+      "python/pyproject.toml",
+      /^version = "([^"]+)"$/m,
+      "python version",
+    ) === version,
+    "python version drifted",
+  );
+  assert(
+    matchOne(
+      "go-cobra/go.mod",
+      /^\s*github\.com\/lathe-cli\/kitup\/go v([^\s]+)$/m,
+      "go-cobra core version",
+    ) === version,
+    "go-cobra core version drifted",
+  );
+  assert(
+    matchOne(
+      "python/pyproject.toml",
+      /^name = "([^"]+)"$/m,
+      "python package name",
+    ) === "kitup-sdk",
+    "python package name drifted",
+  );
+  assert(
+    matchOne(
+      "python/pyproject.toml",
+      /^requires-python = "([^"]+)"$/m,
+      "python requires-python",
+    ) === ">=3.10",
+    "python requires-python drifted",
+  );
+}
+
+function validateReleaseWorkflow() {
+  const workflow = readText(".github/workflows/release.yml");
+  assert(
+    workflow.includes("github.com\\/lathe-cli\\/kitup\\/go"),
+    "release workflow must check the canonical Go module path",
+  );
+  assert(
+    !workflow.includes("github.com\\/samzong\\/kitup\\/go"),
+    "release workflow still checks the old Go module path",
+  );
+  assert(
+    /^\s*environment: pypi$/m.test(workflow),
+    "release workflow must use the pypi environment",
+  );
+  assert(
+    workflow.includes("https://pypi.org/pypi/kitup-sdk/"),
+    "release workflow must check kitup-sdk on PyPI",
+  );
+  assert(
+    !workflow.includes("https://pypi.org/pypi/kitup/"),
+    "release workflow still checks the old PyPI package name",
+  );
+  const smoke = readText("scripts/smoke-release.sh");
+  assert(
+    smoke.includes('"kitup-sdk==$version"'),
+    "release smoke must install kitup-sdk from PyPI",
+  );
+}
+
 const hostsSpec = readJson("spec/hosts.json");
 const cases = readJson("testdata/cases/bundled-skill-install.json");
 readJson("spec/hosts.schema.json");
@@ -194,6 +274,8 @@ readJson("testdata/cases.schema.json");
 const { ids, aliases } = validateHosts(hostsSpec);
 validateCases(cases, hostsSpec.hosts);
 validateFixtures();
+validateVersions();
+validateReleaseWorkflow();
 
 assert(ids.has("kimi-cli"), "kimi-cli must be canonical");
 assert(!ids.has("kimi-code-cli"), "kimi-code-cli must not be canonical");

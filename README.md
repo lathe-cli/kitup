@@ -180,7 +180,7 @@ The final install report contains `installed`, `updated`, `skipped`, `conflicts`
 Install:
 
 ```bash
-pip install kitup
+pip install kitup-sdk
 ```
 
 Use the workflow API for user-facing install commands:
