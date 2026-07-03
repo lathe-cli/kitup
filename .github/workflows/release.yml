@@ -54,7 +54,7 @@ jobs:
           else
             echo "npm=false" >> "$GITHUB_OUTPUT"
           fi
-          if curl -fsS "https://crates.io/api/v1/crates/kitup/${version}" >/dev/null 2>&1; then
+          if curl -A "kitup-release" -fsS "https://crates.io/api/v1/crates/kitup/${version}" >/dev/null 2>&1; then
             echo "crate=true" >> "$GITHUB_OUTPUT"
           else
             echo "crate=false" >> "$GITHUB_OUTPUT"
