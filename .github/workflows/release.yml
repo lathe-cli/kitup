@@ -38,16 +38,10 @@ jobs:
       - name: Verify release version
         run: |
           version="${GITHUB_REF_NAME#v}"
-          VERSION="$version" node -e 'const { readFileSync } = require("node:fs"); const version = process.env.VERSION; const pkg = JSON.parse(readFileSync("ts/package.json", "utf8")); if (pkg.version !== version) { throw new Error(`ts/package.json version ${pkg.version} != ${version}`); }'
+          VERSION="$version" node -e 'const { readFileSync } = require("node:fs"); const version = process.env.VERSION; const pkg = JSON.parse(readFileSync("ts/package.json", "utf8")); if (pkg.version !== version) { throw new Error("ts/package.json version " + pkg.version + " != " + version); }'
           rust_version="$(awk -F '"' '/^version = / { print $2; exit }' rust/Cargo.toml)"
           test "$rust_version" = "$version"
-          python_version="$(python - <<'PY'
-from pathlib import Path
-import re
-text = Path("python/pyproject.toml").read_text()
-print(re.search(r'^version = "([^"]+)"$', text, re.M).group(1))
-PY
-)"
+          python_version="$(awk -F '"' '/^version = / { print $2; exit }' python/pyproject.toml)"
           test "$python_version" = "$version"
           go_cobra_core_version="$(awk '/github.com\/lathe-cli\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
           test "$go_cobra_core_version" = "v$version"
