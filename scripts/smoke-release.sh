@@ -100,7 +100,7 @@ GO
 smoke_python() {
 	dir="$(mktemp -d "$tmp/python.XXXXXX")"
 	cd "$dir"
-	uv run --with "kitup==$version" python - <<'PY'
+	uv run --with "kitup-sdk==$version" python - <<'PY'
 from kitup import load_host_spec
 
 spec = load_host_spec()

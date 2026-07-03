@@ -3,7 +3,7 @@
 `kitup` publishes one version across five package surfaces:
 
 - npm: `@kitup/sdk`
-- PyPI: `kitup`
+- PyPI: `kitup-sdk`
 - crates.io: `kitup`
 - Go module: `github.com/lathe-cli/kitup/go`
 - Go Cobra adapter: `github.com/lathe-cli/kitup/go-cobra`
@@ -87,4 +87,4 @@ Run the public install smoke check manually with:
 scripts/smoke-release.sh X.Y.Z
 ```
 
-The smoke check installs from npm, PyPI, crates.io, the public Go module, and the public Go Cobra adapter, then verifies that each SDK can load the default host spec or instantiate its adapter.
+The smoke check installs from npm, PyPI (`kitup-sdk`), crates.io, the public Go module, and the public Go Cobra adapter, then verifies that each SDK can load the default host spec or instantiate its adapter.

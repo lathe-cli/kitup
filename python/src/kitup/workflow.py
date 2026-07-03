@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import io
 import sys
 from typing import Iterable
 
@@ -562,10 +561,27 @@ def _coerce_flag_values(value: object) -> list[str]:
 
 class _LineReader:
     def __init__(self, source: object | None) -> None:
-        self._lines: list[str] = list(self._iter_lines(source))
+        self._stream = (
+            source
+            if source is not None
+            and not isinstance(source, str | bytes)
+            and hasattr(source, "readline")
+            else None
+        )
+        self._lines: list[str] = (
+            [] if self._stream is not None else list(self._iter_lines(source))
+        )
         self._index = 0
 
     def read_line(self) -> str | None:
+        if self._stream is not None:
+            line = self._stream.readline()
+            if isinstance(line, bytes):
+                line = line.decode("utf-8")
+            line = str(line)
+            if line == "":
+                return None
+            return line.rstrip("\n").rstrip("\r")
         if self._index >= len(self._lines):
             return None
         line = self._lines[self._index]
@@ -584,8 +600,6 @@ class _LineReader:
             if isinstance(contents, bytes):
                 return self._split_text(contents.decode("utf-8"))
             return self._split_text(str(contents))
-        if isinstance(source, io.StringIO):
-            return self._split_text(source.getvalue())
         if isinstance(source, Iterable):
             chunks: list[str] = []
             for item in source:

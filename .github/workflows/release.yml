@@ -13,6 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: pypi
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,7 +49,7 @@ print(re.search(r'^version = "([^"]+)"$', text, re.M).group(1))
 PY
 )"
           test "$python_version" = "$version"
-          go_cobra_core_version="$(awk '/github.com\/samzong\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
+          go_cobra_core_version="$(awk '/github.com\/lathe-cli\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
           test "$go_cobra_core_version" = "v$version"
       - name: Check published versions
         id: published
@@ -64,7 +65,7 @@ PY
           else
             echo "crate=false" >> "$GITHUB_OUTPUT"
           fi
-          if curl -fsS "https://pypi.org/pypi/kitup/${version}/json" >/dev/null 2>&1; then
+          if curl -fsS "https://pypi.org/pypi/kitup-sdk/${version}/json" >/dev/null 2>&1; then
             echo "pypi=true" >> "$GITHUB_OUTPUT"
           else
             echo "pypi=false" >> "$GITHUB_OUTPUT"
