@@ -211,6 +211,104 @@ Implemented functions:
 - `uninstall_bundled_skill(options)`
 - `INSTALL_UX`
 
+## Python
+
+Package: `kitup`
+
+```python
+from kitup import (
+    BaseOptions,
+    InstallOptions,
+    InstallWorkflowOptions,
+    classify_install_workflow_exit,
+    compute_bundle_content_hash,
+    detect_hosts,
+    directory_bundle,
+    files_bundle,
+    github_bundle,
+    install_bundled_skill,
+    install_flag_error,
+    install_workflow_error,
+    load_host_spec,
+    parse_install_flags,
+    parse_scope_flag,
+    plan_bundled_skill,
+    resolve_hosts,
+    resolve_install_selection,
+    resolve_install_targets,
+    run_bundled_skill_install,
+    uninstall_bundled_skill,
+    update_bundled_skill,
+    validate_skill_bundle,
+)
+```
+
+Primitive install call:
+
+```python
+from kitup import BaseOptions, InstallOptions, directory_bundle, install_bundled_skill
+
+report = install_bundled_skill(
+    InstallOptions(
+        base=BaseOptions(),
+        app_id="mycli",
+        skill_bundle=directory_bundle("./skills/mycli"),
+        scope="user",
+    )
+)
+```
+
+Workflow call:
+
+```python
+from kitup import (
+    BaseOptions,
+    InstallOptions,
+    InstallWorkflowOptions,
+    directory_bundle,
+    run_bundled_skill_install,
+)
+
+workflow = run_bundled_skill_install(
+    InstallWorkflowOptions(
+        install=InstallOptions(
+            base=BaseOptions(),
+            app_id="mycli",
+            skill_bundle=directory_bundle("./skills/mycli"),
+            scope="user",
+        ),
+        stdin_tty=True,
+        prompt_scope=True,
+    )
+)
+```
+
+Implemented functions:
+
+- `load_host_spec(hosts_file=None)`
+- `resolve_hosts(agents, hosts)`
+- `detect_hosts(options, scope=None)`
+- `resolve_install_selection(options)`
+- `resolve_install_targets(options, agents, scope, skill_name)`
+- `validate_skill_bundle(bundle, cwd=None)`
+- `compute_bundle_content_hash(bundle, cwd=None)`
+- `directory_bundle(path)`
+- `files_bundle(files)`
+- `github_bundle(options)`
+- `parse_install_flags(flags)`
+- `agent_selector_from_flags(values, errors)`
+- `parse_scope_flag(value, errors)`
+- `classify_install_workflow_exit(report)`
+- `install_workflow_error(report)`
+- `install_flag_error(errors)`
+- `run_bundled_skill_install(options)`
+- `run_bundled_skill_install_with_io(options, input, output)`
+- `plan_bundled_skill(options)`
+- `install_bundled_skill(options)`
+- `update_bundled_skill(options)`
+- `uninstall_bundled_skill(options)`
+- `INSTALL_UX`
+
 ## Options
 
 Install options use the same concepts across languages:

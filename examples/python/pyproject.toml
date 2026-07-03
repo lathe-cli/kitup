@@ -1,0 +1,8 @@
+[project]
+name = "kitup-example-python"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = ["kitup"]
+
+[tool.uv.sources]
+kitup = { path = "../../python" }

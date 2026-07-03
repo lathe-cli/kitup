@@ -18,6 +18,15 @@ const files = new Map([
     "rust/src/hosts_generated.rs",
     `// Code generated from spec/hosts.json. DO NOT EDIT.\n\npub(crate) const DEFAULT_HOSTS_SPEC_JSON: &str = ${rustString(hosts)};\n`,
   ],
+  [
+    "python/src/kitup/_hosts_generated.py",
+    [
+      "# Code generated from spec/hosts.json. DO NOT EDIT.",
+      "",
+      `DEFAULT_HOSTS_SPEC_JSON = ${JSON.stringify(hosts)}`,
+      "",
+    ].join("\n"),
+  ],
 ]);
 
 let drifted = false;

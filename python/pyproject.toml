@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kitup"
+version = "0.1.1"
+description = "Shared installer SDK for bundled Agent Skills."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "MIT" }
+keywords = ["agent", "skills", "installer", "sdk"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.12.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.12.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"

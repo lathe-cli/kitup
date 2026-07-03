@@ -175,6 +175,41 @@ let result = kitup::run_bundled_skill_install(&kitup::InstallWorkflowOptions {
 The workflow result contains the selected agents, dry-run plan, final install report, and cancellation state.
 The final install report contains `installed`, `updated`, `skipped`, `conflicts`, and `errors`.
 
+### Python
+
+Install:
+
+```bash
+pip install kitup
+```
+
+Use the workflow API for user-facing install commands:
+
+```python
+from kitup import (
+    BaseOptions,
+    InstallOptions,
+    InstallWorkflowOptions,
+    directory_bundle,
+    run_bundled_skill_install,
+)
+
+result = run_bundled_skill_install(
+    InstallWorkflowOptions(
+        install=InstallOptions(
+            base=BaseOptions(),
+            app_id="mycli",
+            skill_bundle=directory_bundle("./skills/mycli"),
+            scope="user",
+        ),
+        stdin_tty=True,
+        prompt_scope=True,
+    )
+)
+```
+
+For non-interactive or embedding scenarios, call `install_bundled_skill`, `plan_bundled_skill`, `update_bundled_skill`, or `uninstall_bundled_skill` directly.
+
 ## Docs
 
 - [API](docs/API.md)

@@ -254,6 +254,33 @@ for (const [name, command, args, cwd, env] of [
     rootPath,
   ],
   [
+    "python-format",
+    "uv",
+    [
+      "run",
+      "ruff",
+      "format",
+      "--check",
+      "src",
+      "tests",
+      "--exclude",
+      "src/kitup/_hosts_generated.py",
+    ],
+    new URL("../python/", import.meta.url),
+  ],
+  [
+    "python-lint",
+    "uv",
+    ["run", "ruff", "check", "src", "tests"],
+    new URL("../python/", import.meta.url),
+  ],
+  [
+    "python",
+    "uv",
+    ["run", "pytest", "tests", "-q"],
+    new URL("../python/", import.meta.url),
+  ],
+  [
     "example-ts",
     "pnpm",
     ["--dir", "examples/ts", "install-skill"],
@@ -273,6 +300,13 @@ for (const [name, command, args, cwd, env] of [
     ["run", "--quiet"],
     new URL("../examples/rust/", import.meta.url),
     detectedEnv("kitup-example-rust-"),
+  ],
+  [
+    "example-python",
+    "uv",
+    ["run", "python", "main.py"],
+    new URL("../examples/python/", import.meta.url),
+    detectedEnv("kitup-example-python-"),
   ],
 ]) {
   console.log(`\n==> ${name}`);

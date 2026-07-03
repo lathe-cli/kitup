@@ -26,6 +26,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
       - name: Setup Rust
         run: rustup toolchain install stable --profile minimal
       - name: Check
@@ -36,7 +40,15 @@ jobs:
           VERSION="$version" node -e 'const { readFileSync } = require("node:fs"); const version = process.env.VERSION; const pkg = JSON.parse(readFileSync("ts/package.json", "utf8")); if (pkg.version !== version) { throw new Error(`ts/package.json version ${pkg.version} != ${version}`); }'
           rust_version="$(awk -F '"' '/^version = / { print $2; exit }' rust/Cargo.toml)"
           test "$rust_version" = "$version"
-          go_cobra_core_version="$(awk '/github.com\/lathe-cli\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
+          python_version="$(python - <<'PY'
+from pathlib import Path
+import re
+text = Path("python/pyproject.toml").read_text()
+print(re.search(r'^version = "([^"]+)"$', text, re.M).group(1))
+PY
+)"
+          test "$python_version" = "$version"
+          go_cobra_core_version="$(awk '/github.com\/samzong\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
           test "$go_cobra_core_version" = "v$version"
       - name: Check published versions
         id: published
@@ -52,6 +64,11 @@ jobs:
           else
             echo "crate=false" >> "$GITHUB_OUTPUT"
           fi
+          if curl -fsS "https://pypi.org/pypi/kitup/${version}/json" >/dev/null 2>&1; then
+            echo "pypi=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pypi=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Dry run npm package
         if: steps.published.outputs.npm != 'true'
         run: |
@@ -62,6 +79,9 @@ jobs:
         run: |
           cd rust
           cargo publish --locked --dry-run
+      - name: Build Python package
+        if: steps.published.outputs.pypi != 'true'
+        run: uv build --directory python
       - name: Publish npm package
         if: steps.published.outputs.npm != 'true'
         run: |
@@ -74,6 +94,11 @@ jobs:
           cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish Python package
+        if: steps.published.outputs.pypi != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
       - name: Publish Go module tags
         run: |
           version="${GITHUB_REF_NAME#v}"
