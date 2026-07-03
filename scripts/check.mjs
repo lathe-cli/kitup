@@ -23,6 +23,16 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
+const knownGroups = new Set(["source", "typescript", "go", "rust", "python"]);
+const selectedGroups = new Set(process.argv.slice(2));
+for (const group of selectedGroups) {
+  assert(knownGroups.has(group), `unknown check group: ${group}`);
+}
+
+function shouldRun(group) {
+  return selectedGroups.size === 0 || selectedGroups.has(group);
+}
+
 function validateHosts(spec) {
   assert(spec.schemaVersion === 1, "hosts schemaVersion must be 1");
   assert(Array.isArray(spec.hosts), "hosts must be an array");
@@ -293,9 +303,16 @@ function detectedEnv(prefix) {
   };
 }
 
-for (const [name, command, args, cwd, env] of [
-  ["generated-hosts", "node", ["scripts/sync-hosts.mjs", "--check"], rootPath],
+for (const [group, name, command, args, cwd, env] of [
   [
+    "source",
+    "generated-hosts",
+    "node",
+    ["scripts/sync-hosts.mjs", "--check"],
+    rootPath,
+  ],
+  [
+    "typescript",
     "typescript-format",
     "pnpm",
     [
@@ -312,16 +329,18 @@ for (const [name, command, args, cwd, env] of [
     ],
     rootPath,
   ],
-  ["typescript", "pnpm", ["--dir", "ts", "test"], rootPath],
-  ["go", "go", ["test", "./..."], new URL("../go/", import.meta.url)],
+  ["typescript", "typescript", "pnpm", ["--dir", "ts", "test"], rootPath],
+  ["go", "go", "go", ["test", "./..."], new URL("../go/", import.meta.url)],
   [
+    "go",
     "go-cobra",
     "go",
     ["test", "./..."],
     new URL("../go-cobra/", import.meta.url),
   ],
-  ["rust", "cargo", ["test"], new URL("../rust/", import.meta.url)],
+  ["rust", "rust", "cargo", ["test"], new URL("../rust/", import.meta.url)],
   [
+    "rust",
     "rust-clippy",
     "cargo",
     [
@@ -336,6 +355,7 @@ for (const [name, command, args, cwd, env] of [
     rootPath,
   ],
   [
+    "python",
     "python-format",
     "uv",
     [
@@ -351,6 +371,7 @@ for (const [name, command, args, cwd, env] of [
     new URL("../python/", import.meta.url),
   ],
   [
+    "python",
     "python-lint",
     "uv",
     ["run", "ruff", "check", "src", "tests"],
@@ -358,11 +379,13 @@ for (const [name, command, args, cwd, env] of [
   ],
   [
     "python",
+    "python",
     "uv",
     ["run", "pytest", "tests", "-q"],
     new URL("../python/", import.meta.url),
   ],
   [
+    "typescript",
     "example-ts",
     "pnpm",
     ["--dir", "examples/ts", "install-skill"],
@@ -370,6 +393,7 @@ for (const [name, command, args, cwd, env] of [
     detectedEnv("kitup-example-ts-"),
   ],
   [
+    "go",
     "example-go",
     "go",
     ["run", "."],
@@ -377,6 +401,7 @@ for (const [name, command, args, cwd, env] of [
     detectedEnv("kitup-example-go-"),
   ],
   [
+    "rust",
     "example-rust",
     "cargo",
     ["run", "--quiet"],
@@ -384,6 +409,7 @@ for (const [name, command, args, cwd, env] of [
     detectedEnv("kitup-example-rust-"),
   ],
   [
+    "python",
     "example-python",
     "uv",
     ["run", "python", "main.py"],
@@ -391,6 +417,7 @@ for (const [name, command, args, cwd, env] of [
     detectedEnv("kitup-example-python-"),
   ],
 ]) {
+  if (!shouldRun(group)) continue;
   console.log(`\n==> ${name}`);
   const result = spawnSync(command, args, {
     cwd,
