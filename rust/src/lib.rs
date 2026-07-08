@@ -201,6 +201,32 @@ pub fn files_bundle(files: Vec<SkillFile>) -> SkillBundle {
     SkillBundle::Files(files)
 }
 
+#[cfg(feature = "include-dir")]
+pub fn include_dir_bundle(dir: &include_dir::Dir<'_>) -> SkillBundle {
+    fn collect(root: &Path, dir: &include_dir::Dir<'_>, files: &mut Vec<SkillFile>) {
+        for file in dir.files() {
+            let path = file.path();
+            let path = if root.as_os_str().is_empty() {
+                path
+            } else {
+                path.strip_prefix(root).unwrap_or(path)
+            };
+            files.push(SkillFile {
+                path: path.to_string_lossy().replace('\\', "/"),
+                contents: file.contents().to_vec(),
+                mode: None,
+            });
+        }
+        for dir in dir.dirs() {
+            collect(root, dir, files);
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(dir.path(), dir, &mut files);
+    files_bundle(files)
+}
+
 pub fn github_bundle(options: GitHubBundleOptions) -> SkillBundle {
     SkillBundle::GitHub(options)
 }

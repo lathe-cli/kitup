@@ -343,12 +343,20 @@ for (const [group, name, command, args, cwd, env] of [
   ["rust", "rust", "cargo", ["test"], new URL("../rust/", import.meta.url)],
   [
     "rust",
+    "rust-include-dir",
+    "cargo",
+    ["test", "--features", "include-dir"],
+    new URL("../rust/", import.meta.url),
+  ],
+  [
+    "rust",
     "rust-clippy",
     "cargo",
     [
       "clippy",
       "--manifest-path",
       "rust/Cargo.toml",
+      "--all-features",
       "--all-targets",
       "--",
       "-D",

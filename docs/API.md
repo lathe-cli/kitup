@@ -185,6 +185,17 @@ let report = kitup::install_bundled_skill(&kitup::InstallOptions {
 })?;
 ```
 
+Embedded `include_dir` bundle call:
+
+```rust
+static SKILL: include_dir::Dir<'_> =
+    include_dir::include_dir!("$CARGO_MANIFEST_DIR/skills/mycli");
+
+let bundle = kitup::include_dir_bundle(&SKILL);
+```
+
+Requires the `kitup` crate feature `include-dir` and a direct `include_dir` dependency for the macro.
+
 Implemented functions:
 
 - `load_host_spec(hosts_file)`
@@ -196,6 +207,7 @@ Implemented functions:
 - `compute_bundle_content_hash(bundle)`
 - `directory_bundle(path)`
 - `files_bundle(files)`
+- `include_dir_bundle(dir)` with the `include-dir` feature
 - `github_bundle(options)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`
