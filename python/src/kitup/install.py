@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 import shutil
 import tempfile
 from pathlib import Path
@@ -121,15 +122,12 @@ def write_managed_bundle(
 ) -> None:
     if not replace:
         copy_normalized_bundle(files, target_dir)
-        write_install_metadata(
+        write_bundle_metadata(
             target_dir,
             app_id=app_id,
             skill_name=skill_name,
             digest=digest,
-            source=str(metadata["source"]),
-            source_id=_metadata_text(metadata, "source_id"),
-            version=_metadata_text(metadata, "version"),
-            provenance=_metadata_provenance(metadata),
+            metadata=metadata,
         )
         return
 
@@ -143,15 +141,12 @@ def write_managed_bundle(
     backup_dir: Path | None = None
     try:
         copy_normalized_bundle(files, staged_dir)
-        write_install_metadata(
+        write_bundle_metadata(
             staged_dir,
             app_id=app_id,
             skill_name=skill_name,
             digest=digest,
-            source=str(metadata["source"]),
-            source_id=_metadata_text(metadata, "source_id"),
-            version=_metadata_text(metadata, "version"),
-            provenance=_metadata_provenance(metadata),
+            metadata=metadata,
         )
         backup_dir = Path(
             tempfile.mkdtemp(
@@ -266,7 +261,18 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
                 report.conflicts.append(target_status(target, "owner-mismatch"))
             continue
         if metadata.get("hash") == digest:
-            report.skipped.append(target_status(target, "unchanged"))
+            if repair_bundle_modes(normalized.files, target_dir, write=write):
+                if write:
+                    write_bundle_metadata(
+                        target_dir,
+                        app_id=options.app_id,
+                        skill_name=info.skill_name,
+                        digest=digest,
+                        metadata=bundle_metadata,
+                    )
+                report.updated.append(result)
+            else:
+                report.skipped.append(target_status(target, "unchanged"))
             continue
 
         if write:
@@ -282,6 +288,43 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
         report.updated.append(result)
 
     return report
+
+
+def repair_bundle_modes(
+    files: list[BundleFile], target_dir: Path, *, write: bool
+) -> bool:
+    repaired = False
+    for file in files:
+        destination = target_dir / file.path
+        try:
+            mode = destination.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(mode) and mode & 0o777 != file.mode:
+            repaired = True
+            if write:
+                destination.chmod(file.mode)
+    return repaired
+
+
+def write_bundle_metadata(
+    target_dir: Path,
+    *,
+    app_id: str,
+    skill_name: str,
+    digest: str,
+    metadata: dict[str, object],
+) -> None:
+    write_install_metadata(
+        target_dir,
+        app_id=app_id,
+        skill_name=skill_name,
+        digest=digest,
+        source=str(metadata["source"]),
+        source_id=_metadata_text(metadata, "source_id"),
+        version=_metadata_text(metadata, "version"),
+        provenance=_metadata_provenance(metadata),
+    )
 
 
 def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:

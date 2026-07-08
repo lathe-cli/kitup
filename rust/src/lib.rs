@@ -994,7 +994,20 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                 }
             }
             MetadataState::Managed(meta) if meta.hash == hash => {
-                report.skipped.push(with_reason(result, "unchanged"))
+                if repair_skill_bundle_modes(&bundle, &target.target_dir, write)? {
+                    if write {
+                        write_metadata(
+                            &target.target_dir,
+                            &options.app_id,
+                            &skill_name,
+                            &hash,
+                            &bundle_metadata,
+                        )?;
+                    }
+                    report.updated.push(result);
+                } else {
+                    report.skipped.push(with_reason(result, "unchanged"))
+                }
             }
             MetadataState::Managed(_) => {
                 if write {
@@ -1077,6 +1090,31 @@ fn copy_skill_bundle(bundle: &NormalizedSkillBundle, dest: &Path) -> io::Result<
         set_mode(&to, file.mode)?;
     }
     Ok(())
+}
+
+fn repair_skill_bundle_modes(
+    bundle: &NormalizedSkillBundle,
+    dest: &Path,
+    write: bool,
+) -> io::Result<bool> {
+    let mut repaired = false;
+    for file in &bundle.files {
+        let to = dest.join(PathBuf::from(
+            file.path.replace('/', std::path::MAIN_SEPARATOR_STR),
+        ));
+        let metadata = match fs::symlink_metadata(&to) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        if metadata.is_file() && mode_bits(&metadata).is_some_and(|mode| mode != file.mode) {
+            repaired = true;
+            if write {
+                set_mode(&to, file.mode)?;
+            }
+        }
+    }
+    Ok(repaired)
 }
 
 fn write_metadata(
@@ -1669,7 +1707,7 @@ fn normalize_skill_files(files: Vec<SkillFile>) -> io::Result<NormalizedSkillBun
                 format!("duplicate skill file: {path}"),
             ));
         }
-        let mode = file.mode.unwrap_or(0o644);
+        let mode = file.mode.unwrap_or_else(|| default_bundle_file_mode(&path));
         by_path.insert(
             path.clone(),
             BundleFile {
@@ -1681,6 +1719,14 @@ fn normalize_skill_files(files: Vec<SkillFile>) -> io::Result<NormalizedSkillBun
     }
     let files = by_path.values().cloned().collect();
     Ok(NormalizedSkillBundle { files, by_path })
+}
+
+fn default_bundle_file_mode(path: &str) -> u32 {
+    if path.starts_with("scripts/") {
+        0o755
+    } else {
+        0o644
+    }
 }
 
 fn normalize_bundle_path(value: &str) -> io::Result<Option<String>> {

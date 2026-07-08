@@ -124,6 +124,7 @@ def run_case(case, home: Path, workspace: Path) -> None:
                 expand_value(case["expected"]["report"], home, workspace)
             )
         assert_expected_files(case, home, workspace)
+        assert_expected_file_modes(case, home, workspace)
         assert_expected_metadata(case, home, workspace)
         return
 
@@ -145,6 +146,7 @@ def run_case(case, home: Path, workspace: Path) -> None:
         )
     assert_expected_write_counts(case, report, home, workspace)
     assert_expected_files(case, home, workspace)
+    assert_expected_file_modes(case, home, workspace)
     assert_expected_metadata(case, home, workspace)
 
 
@@ -173,6 +175,8 @@ def setup_given(case, home: Path, workspace: Path):
         target = expand_path(case["given"]["copySkillBundleTo"], home, workspace)
         shutil.rmtree(target, ignore_errors=True)
         shutil.copytree(case_skill_bundle_dir(case), target)
+    for path, mode in case["given"].get("fileModes", {}).items():
+        expand_path(path, home, workspace).chmod(int(mode, 8))
     if "metadata" in case["given"]:
         write_metadata_fixture(case, home, workspace, case["given"]["metadata"])
     github = case["given"].get("github")
@@ -188,6 +192,12 @@ def assert_expected_files(case, home: Path, workspace: Path) -> None:
     for value in case["expected"].get("filesAbsent", []):
         path = expand_path(value, home, workspace)
         assert not path.exists(), f"expected file to be absent: {path}"
+
+
+def assert_expected_file_modes(case, home: Path, workspace: Path) -> None:
+    for value, expected in case["expected"].get("fileModes", {}).items():
+        path = expand_path(value, home, workspace)
+        assert oct(path.stat().st_mode & 0o777)[2:] == expected
 
 
 def assert_expected_metadata(case, home: Path, workspace: Path) -> None:
@@ -442,7 +452,12 @@ def skill_bundle_from_case(case) -> object:
 
 def skill_files(values) -> list[SkillFile]:
     return [
-        SkillFile(path=value["path"], contents=value["contents"]) for value in values
+        SkillFile(
+            path=value["path"],
+            contents=value["contents"],
+            mode=value.get("mode"),
+        )
+        for value in values
     ]
 
 

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 type goldenFile struct {
@@ -38,6 +40,26 @@ func TestGoldenCases(t *testing.T) {
 			runCase(t, tc, home, workspace)
 		})
 	}
+}
+
+func TestFSBundleTreatsEmbedReadOnlyModesAsDefaults(t *testing.T) {
+	files, err := readFSBundleFiles(fstest.MapFS{
+		"skills/basic/SKILL.md": {
+			Data: []byte("---\nname: basic\ndescription: Basic skill.\n---\n"),
+			Mode: 0o444,
+		},
+		"skills/basic/scripts/helper.sh": {
+			Data: []byte("#!/usr/bin/env sh\n"),
+			Mode: 0o444,
+		},
+	}, "skills/basic")
+	must(t, err)
+	modes := map[string]os.FileMode{}
+	for _, file := range files {
+		modes[file.Path] = file.Mode.Perm()
+	}
+	equal(t, modes["SKILL.md"], os.FileMode(0o644))
+	equal(t, modes["scripts/helper.sh"], os.FileMode(0o755))
 }
 
 func runCase(t *testing.T, tc goldenCase, home, workspace string) {
@@ -114,6 +136,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 			equal(t, report.Report, expandValue(expected, home, workspace))
 		}
 		assertExpectedFiles(t, tc, home, workspace)
+		assertExpectedFileModes(t, tc, home, workspace)
 		assertExpectedMetadata(t, tc, home, workspace)
 	default:
 		if expected, ok := tc.Expected["detectedHosts"]; ok {
@@ -127,6 +150,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 		}
 		assertExpectedWriteCounts(t, tc, report, home, workspace)
 		assertExpectedFiles(t, tc, home, workspace)
+		assertExpectedFileModes(t, tc, home, workspace)
 		assertExpectedMetadata(t, tc, home, workspace)
 	}
 }
@@ -184,6 +208,13 @@ func setupGiven(t *testing.T, tc goldenCase, home, workspace string) {
 		must(t, os.RemoveAll(expandString(target, home, workspace)))
 		must(t, copySkillBundleDir(caseSkillBundleDir(tc), expandString(target, home, workspace)))
 	}
+	if modes, ok := tc.Given["fileModes"].(map[string]any); ok {
+		for path, mode := range modes {
+			value, err := strconv.ParseUint(mode.(string), 8, 32)
+			must(t, err)
+			must(t, os.Chmod(expandString(path, home, workspace), os.FileMode(value)))
+		}
+	}
 	if meta, ok := tc.Given["metadata"].(map[string]any); ok {
 		writeMetadataFixture(t, tc, home, workspace, meta)
 	}
@@ -205,6 +236,18 @@ func assertExpectedFiles(t *testing.T, tc goldenCase, home, workspace string) {
 	}
 }
 
+func assertExpectedFileModes(t *testing.T, tc goldenCase, home, workspace string) {
+	modes, ok := tc.Expected["fileModes"].(map[string]any)
+	if !ok {
+		return
+	}
+	for path, expected := range modes {
+		info, err := os.Stat(expandString(path, home, workspace))
+		must(t, err)
+		equal(t, modeString(info.Mode().Perm()), expected)
+	}
+}
+
 func assertExpectedMetadata(t *testing.T, tc goldenCase, home, workspace string) {
 	meta, ok := tc.Expected["metadata"].(map[string]any)
 	if !ok {
@@ -218,6 +261,10 @@ func assertExpectedMetadata(t *testing.T, tc goldenCase, home, workspace string)
 	}
 	hash := expectedBundleHash(t, tc, meta["hash"].(string))
 	equal(t, actual["hash"], hash)
+}
+
+func modeString(mode os.FileMode) string {
+	return strings.TrimLeft("000"+strconv.FormatUint(uint64(mode), 8), "0")
 }
 
 func assertExpectedWriteCounts(t *testing.T, tc goldenCase, report any, home, workspace string) {
@@ -372,9 +419,14 @@ func skillFiles(values []any) []SkillFile {
 	files := make([]SkillFile, 0, len(values))
 	for _, value := range values {
 		item := value.(map[string]any)
+		mode := os.FileMode(0)
+		if raw, ok := item["mode"].(float64); ok {
+			mode = os.FileMode(raw)
+		}
 		files = append(files, SkillFile{
 			Path:     item["path"].(string),
 			Contents: []byte(item["contents"].(string)),
+			Mode:     mode,
 		})
 	}
 	return files

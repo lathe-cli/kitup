@@ -60,7 +60,7 @@ class SkillInfo:
 class SkillFile:
     path: str
     contents: str | bytes
-    mode: int = 0o644
+    mode: int | None = None
 
 
 @dataclass(frozen=True)

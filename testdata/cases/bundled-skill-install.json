@@ -858,6 +858,58 @@
       }
     },
     {
+      "id": "unchanged-repairs-script-mode",
+      "operation": "install",
+      "description": "Repairs script executable mode drift even when the stored content hash is unchanged.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "copySkillBundleTo": "$HOME/.agents/skills/basic",
+        "fileModes": {
+          "$HOME/.agents/skills/basic/scripts/helper.sh": "644"
+        },
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          },
+          "hash": "from-skill-bundle-dir"
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "fileModes": {
+          "$HOME/.agents/skills/basic/scripts/helper.sh": "755"
+        }
+      }
+    },
+    {
       "id": "workflow-conflict-exit",
       "operation": "run-install-workflow",
       "description": "Returns a conflict exit classification when the plan has conflicts but no writes.",
@@ -1423,6 +1475,15 @@
             "contents": "{\"ok\":true}\n"
           },
           {
+            "path": "scripts/helper.sh",
+            "contents": "#!/usr/bin/env sh\necho embedded\n"
+          },
+          {
+            "path": "scripts/disabled.sh",
+            "contents": "#!/usr/bin/env sh\necho disabled\n",
+            "mode": 420
+          },
+          {
             "path": ".kitup.json",
             "contents": "{\"ignored\":true}\n"
           },
@@ -1462,11 +1523,16 @@
           "$HOME/.agents/skills/embedded/SKILL.md",
           "$HOME/.agents/skills/embedded/references/guide.md",
           "$HOME/.agents/skills/embedded/assets/template.json",
+          "$HOME/.agents/skills/embedded/scripts/helper.sh",
           "$HOME/.agents/skills/embedded/.kitup.json"
         ],
         "filesAbsent": [
           "$HOME/.agents/skills/embedded/.DS_Store"
         ],
+        "fileModes": {
+          "$HOME/.agents/skills/embedded/scripts/helper.sh": "755",
+          "$HOME/.agents/skills/embedded/scripts/disabled.sh": "644"
+        },
         "metadata": {
           "path": "$HOME/.agents/skills/embedded/.kitup.json",
           "fields": {
@@ -2195,6 +2261,105 @@
               "path": "skills/github-basic",
               "ref": "main",
               "resolvedCommit": "abc123"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "github-bundle-mode-only-update-refreshes-metadata",
+      "operation": "install",
+      "description": "Refreshes GitHub provenance metadata when an unchanged content hash only needs mode repair.",
+      "options": {
+        "appId": "example-cli",
+        "githubBundle": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "path": "skills/github-mode",
+          "ref": "main"
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex"
+        ],
+        "files": {
+          "$HOME/.agents/skills/github-mode/SKILL.md": "---\nname: github-mode\ndescription: GitHub mode skill.\n---\n",
+          "$HOME/.agents/skills/github-mode/scripts/helper.sh": "#!/bin/sh\n"
+        },
+        "fileModes": {
+          "$HOME/.agents/skills/github-mode/scripts/helper.sh": "644"
+        },
+        "metadata": {
+          "path": "$HOME/.agents/skills/github-mode/.kitup.json",
+          "hash": "from-github-bundle",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "github-mode",
+            "source": "github",
+            "sourceId": "github:acme/mycli-skills/skills/github-mode",
+            "version": "old",
+            "provenance": {
+              "owner": "acme",
+              "repo": "mycli-skills",
+              "path": "skills/github-mode",
+              "ref": "old",
+              "resolvedCommit": "old123"
+            }
+          }
+        },
+        "github": {
+          "owner": "acme",
+          "repo": "mycli-skills",
+          "ref": "main",
+          "commit": "new123",
+          "treeSha": "tree-mode",
+          "files": {
+            "skills/github-mode/SKILL.md": "---\nname: github-mode\ndescription: GitHub mode skill.\n---\n",
+            "skills/github-mode/scripts/helper.sh": "#!/bin/sh\n"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [
+            {
+              "hostId": "codex",
+              "skillName": "github-mode",
+              "targetDir": "$HOME/.agents/skills/github-mode"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "fileModes": {
+          "$HOME/.agents/skills/github-mode/scripts/helper.sh": "755"
+        },
+        "metadata": {
+          "path": "$HOME/.agents/skills/github-mode/.kitup.json",
+          "hash": "from-github-bundle",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "github-mode",
+            "source": "github",
+            "sourceId": "github:acme/mycli-skills/skills/github-mode",
+            "version": "main",
+            "provenance": {
+              "owner": "acme",
+              "repo": "mycli-skills",
+              "path": "skills/github-mode",
+              "ref": "main",
+              "resolvedCommit": "new123"
             }
           }
         }
