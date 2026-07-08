@@ -45,6 +45,46 @@ fn golden_cases() {
     }
 }
 
+#[cfg(feature = "include-dir")]
+#[test]
+fn include_dir_bundle_installs_embedded_tree() {
+    static SKILLS: include_dir::Dir<'_> =
+        include_dir::include_dir!("$CARGO_MANIFEST_DIR/../testdata/skills");
+
+    let root = temp_dir("include-dir-bundle");
+    let home = root.join("home");
+
+    let report = install_bundled_skill(&InstallOptions {
+        base: BaseOptions {
+            home: Some(home.clone()),
+            hosts_file: Some(repo_path("spec/hosts.json")),
+            ..BaseOptions::default()
+        },
+        app_id: "example-cli".to_string(),
+        skill_bundle: kitup::include_dir_bundle(SKILLS.get_dir("basic").unwrap()),
+        scope: Scope::User,
+        agents: AgentSelector::Explicit(vec!["codex".to_string()]),
+        force: false,
+    })
+    .unwrap();
+
+    let target = home.join(".agents/skills/basic");
+    assert_eq!(report.installed.len(), 1);
+    for file in ["SKILL.md", "references/guide.md", "assets/template.json"] {
+        assert!(target.join(file).is_file());
+    }
+    #[cfg(unix)]
+    assert_eq!(
+        mode_string(
+            &fs::metadata(target.join("scripts/helper.sh"))
+                .unwrap()
+                .permissions()
+        ),
+        "755"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
     let options = expand_value(&Value::Object(case.options.clone()), home, workspace);
     let options = options.as_object().unwrap();
