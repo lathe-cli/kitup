@@ -222,6 +222,7 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
                 );
             }
             assert_expected_files(case, home, workspace);
+            assert_expected_file_modes(case, home, workspace);
             assert_expected_metadata(case, home, workspace);
         }
         _ => {
@@ -243,6 +244,7 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
             }
             assert_expected_write_counts(case, &report, home, workspace);
             assert_expected_files(case, home, workspace);
+            assert_expected_file_modes(case, home, workspace);
             assert_expected_metadata(case, home, workspace);
         }
     }
@@ -313,6 +315,14 @@ fn setup_given(case: &GoldenCase, home: &Path, workspace: &Path) {
         let _ = fs::remove_dir_all(&target);
         copy_dir(&case_skill_bundle_dir(case), &target);
     }
+    if let Some(modes) = case.given.get("fileModes").and_then(Value::as_object) {
+        for (path, mode) in modes {
+            set_fixture_mode(
+                &expand_string(path, home, workspace),
+                u32::from_str_radix(mode.as_str().unwrap(), 8).unwrap(),
+            );
+        }
+    }
     if let Some(metadata) = case.given.get("metadata").and_then(Value::as_object) {
         write_metadata_fixture(case, home, workspace, metadata);
     }
@@ -347,6 +357,37 @@ fn assert_expected_files(case: &GoldenCase, home: &Path, workspace: &Path) {
         );
     }
 }
+
+fn assert_expected_file_modes(case: &GoldenCase, home: &Path, workspace: &Path) {
+    let Some(modes) = case.expected.get("fileModes").and_then(Value::as_object) else {
+        return;
+    };
+    for (path, expected) in modes {
+        let path = expand_string(path, home, workspace);
+        let mode = fs::metadata(&path).unwrap().permissions();
+        assert_eq!(mode_string(&mode), expected.as_str().unwrap());
+    }
+}
+
+#[cfg(unix)]
+fn mode_string(mode: &fs::Permissions) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    format!("{:o}", mode.mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn mode_string(_mode: &fs::Permissions) -> String {
+    String::new()
+}
+
+#[cfg(unix)]
+fn set_fixture_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+}
+
+#[cfg(not(unix))]
+fn set_fixture_mode(_path: &Path, _mode: u32) {}
 
 fn assert_expected_metadata(case: &GoldenCase, home: &Path, workspace: &Path) {
     let Some(metadata) = case.expected.get("metadata").and_then(Value::as_object) else {
@@ -551,7 +592,10 @@ fn skill_files(values: &[Value]) -> Vec<SkillFile> {
             SkillFile {
                 path: value["path"].as_str().unwrap().to_string(),
                 contents: value["contents"].as_str().unwrap().as_bytes().to_vec(),
-                mode: None,
+                mode: value
+                    .get("mode")
+                    .and_then(Value::as_u64)
+                    .map(|mode| mode as u32),
             }
         })
         .collect()

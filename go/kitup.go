@@ -861,7 +861,20 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 			}
 			report.Conflicts = append(report.Conflicts, withReason(result, "owner-mismatch"))
 		case meta.Hash == hash:
-			report.Skipped = append(report.Skipped, withReason(result, "unchanged"))
+			repaired, err := repairSkillBundleModes(bundle, target.TargetDir, write)
+			if err != nil {
+				return report, err
+			}
+			if repaired {
+				if write {
+					if err := writeMetadata(target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
+						return report, err
+					}
+				}
+				report.Updated = append(report.Updated, result)
+			} else {
+				report.Skipped = append(report.Skipped, withReason(result, "unchanged"))
+			}
 		default:
 			if write {
 				if err := replaceManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
@@ -920,14 +933,37 @@ func copySkillBundle(bundle normalizedSkillBundle, dest string) error {
 			return err
 		}
 		mode := file.Mode.Perm()
-		if mode == 0 {
-			mode = 0o644
-		}
 		if err := os.WriteFile(to, file.Contents, mode); err != nil {
+			return err
+		}
+		if err := os.Chmod(to, mode); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func repairSkillBundleModes(bundle normalizedSkillBundle, dest string, write bool) (bool, error) {
+	repaired := false
+	for _, file := range bundle.Files {
+		to := filepath.Join(dest, filepath.FromSlash(file.Path))
+		info, err := os.Lstat(to)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return false, err
+		}
+		if info.Mode().IsRegular() && info.Mode().Perm() != file.Mode.Perm() {
+			repaired = true
+			if write {
+				if err := os.Chmod(to, file.Mode.Perm()); err != nil {
+					return false, err
+				}
+			}
+		}
+	}
+	return repaired, nil
 }
 
 func writeMetadata(targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
@@ -1471,7 +1507,11 @@ func readFSBundleFiles(fsys fs.FS, root string) ([]SkillFile, error) {
 			if err != nil {
 				return err
 			}
-			files = append(files, SkillFile{Path: rel, Contents: contents, Mode: info.Mode().Perm()})
+			mode := info.Mode().Perm()
+			if mode == 0o444 {
+				mode = defaultBundleFileMode(rel)
+			}
+			files = append(files, SkillFile{Path: rel, Contents: contents, Mode: mode})
 		}
 		return nil
 	})
@@ -1493,7 +1533,7 @@ func normalizeSkillFiles(files []SkillFile) (normalizedSkillBundle, error) {
 		}
 		mode := file.Mode.Perm()
 		if mode == 0 {
-			mode = 0o644
+			mode = defaultBundleFileMode(normalizedPath)
 		}
 		byPath[normalizedPath] = bundleFile{Path: normalizedPath, Contents: file.Contents, Mode: mode}
 	}
@@ -1507,6 +1547,13 @@ func normalizeSkillFiles(files []SkillFile) (normalizedSkillBundle, error) {
 		normalized.Files = append(normalized.Files, byPath[path])
 	}
 	return normalized, nil
+}
+
+func defaultBundleFileMode(path string) fs.FileMode {
+	if strings.HasPrefix(path, "scripts/") {
+		return 0o755
+	}
+	return 0o644
 }
 
 func normalizeBundlePath(value string) (string, bool, error) {

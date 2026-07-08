@@ -141,16 +141,27 @@ def normalize_files_bundle(files: list[SkillFile]) -> NormalizedSkillBundle:
             continue
         if normalized_path in by_path:
             raise KitupError(f"duplicate skill file: {normalized_path}")
+        mode = (
+            file.mode
+            if file.mode is not None
+            else _default_bundle_file_mode(normalized_path)
+        )
         by_path[normalized_path] = BundleFile(
             path=normalized_path,
             bytes=file.contents.encode("utf-8")
             if isinstance(file.contents, str)
             else file.contents,
-            mode=file.mode or 0o644,
+            mode=mode,
         )
 
     normalized_files = [by_path[path] for path in sorted(by_path)]
     return NormalizedSkillBundle(files=normalized_files, by_path=by_path)
+
+
+def _default_bundle_file_mode(path: str) -> int:
+    if path.startswith("scripts/"):
+        return 0o755
+    return 0o644
 
 
 def copy_normalized_bundle(files: list[BundleFile], target_dir: str | Path) -> None:

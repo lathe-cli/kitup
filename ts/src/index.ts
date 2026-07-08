@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  chmod,
   mkdir,
+  lstat,
   readdir,
   readFile,
   rename,
@@ -970,13 +972,18 @@ function normalizeSkillFiles(
         typeof file.contents === "string"
           ? Buffer.from(file.contents)
           : file.contents,
-      mode: file.mode ?? 0o644,
+      mode: bundleFileMode(normalizedPath, file.mode),
     });
   }
   const normalizedFiles = [...byPath.values()].sort((a, b) =>
     a.path.localeCompare(b.path),
   );
   return { label, files: normalizedFiles, byPath };
+}
+
+function bundleFileMode(path: string, mode: number | undefined) {
+  if (mode !== undefined) return mode;
+  return path.startsWith("scripts/") ? 0o755 : 0o644;
 }
 
 function normalizeBundlePath(path: string) {
@@ -1088,7 +1095,19 @@ async function installOrPlan(
       }
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
     } else if (metadata.value.hash === hash) {
-      report.skipped.push({ ...result, reason: "unchanged" });
+      if (await repairSkillBundleModes(bundle, target.targetDir, write)) {
+        if (write)
+          await writeMetadata(
+            target.targetDir,
+            options.appId,
+            skill.skillName,
+            hash,
+            bundleMetadata,
+          );
+        report.updated.push(result);
+      } else {
+        report.skipped.push({ ...result, reason: "unchanged" });
+      }
     } else {
       if (write) {
         await replaceManagedSkill(
@@ -1190,7 +1209,31 @@ async function copySkillBundle(bundle: NormalizedSkillBundle, dest: string) {
     const target = join(dest, file.path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, file.bytes, { mode: file.mode });
+    await chmod(target, file.mode);
   }
+}
+
+async function repairSkillBundleModes(
+  bundle: NormalizedSkillBundle,
+  dest: string,
+  write: boolean,
+) {
+  let repaired = false;
+  for (const file of bundle.files) {
+    const target = join(dest, file.path);
+    let info;
+    try {
+      info = await lstat(target);
+    } catch (error: any) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (info.isFile() && (info.mode & 0o777) !== file.mode) {
+      repaired = true;
+      if (write) await chmod(target, file.mode);
+    }
+  }
+  return repaired;
 }
 
 async function writeMetadata(

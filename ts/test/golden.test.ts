@@ -6,6 +6,7 @@ import {
   readFile,
   rm,
   stat,
+  chmod,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -135,6 +136,7 @@ async function runCase(testCase: any, home: string, workspace: string) {
         expandValue(testCase.expected.report, home, workspace),
       );
     await assertExpectedFiles(testCase, home, workspace);
+    await assertExpectedFileModes(testCase, home, workspace);
     await assertExpectedMetadata(testCase, home, workspace);
     return;
   }
@@ -168,6 +170,7 @@ async function runCase(testCase: any, home: string, workspace: string) {
     );
   assertExpectedWriteCounts(testCase, report, home, workspace);
   await assertExpectedFiles(testCase, home, workspace);
+  await assertExpectedFileModes(testCase, home, workspace);
   await assertExpectedMetadata(testCase, home, workspace);
 }
 
@@ -189,6 +192,13 @@ async function setupGiven(
     await copyFixtureSkill(
       caseSkillBundleDir(testCase),
       expandValue(testCase.given.copySkillBundleTo, home, workspace),
+    );
+  }
+
+  for (const [path, mode] of Object.entries(testCase.given.fileModes ?? {})) {
+    await chmod(
+      expandValue(path, home, workspace),
+      Number.parseInt(String(mode), 8),
     );
   }
 
@@ -214,6 +224,20 @@ async function assertExpectedFiles(
   }
   for (const path of testCase.expected.filesAbsent ?? []) {
     await assertFileMissing(expandValue(path, home, workspace));
+  }
+}
+
+async function assertExpectedFileModes(
+  testCase: any,
+  home: string,
+  workspace: string,
+) {
+  for (const [path, mode] of Object.entries(
+    testCase.expected.fileModes ?? {},
+  )) {
+    const actual =
+      (await stat(expandValue(path, home, workspace))).mode & 0o777;
+    assert.equal(actual.toString(8), mode);
   }
 }
 
