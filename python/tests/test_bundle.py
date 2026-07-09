@@ -1,10 +1,15 @@
 import hashlib
+from pathlib import Path
 
 from kitup import (
+    BaseOptions,
+    InstallOptions,
     compute_bundle_content_hash,
     directory_bundle,
     files_bundle,
     github_bundle,
+    install_bundled_skill,
+    resources_bundle,
     validate_skill_bundle,
 )
 from kitup.types import GitHubBundleOptions, SkillFile
@@ -12,6 +17,10 @@ from kitup.types import GitHubBundleOptions, SkillFile
 
 def _skill_md(*, name: str = "basic", description: str = "demo") -> str:
     return f"---\nname: {name}\ndescription: {description}\n---\n"
+
+
+def _repo_skills_basic() -> Path:
+    return Path(__file__).resolve().parents[2] / "testdata" / "skills" / "basic"
 
 
 def test_validate_skill_bundle_rejects_parent_segments():
@@ -50,6 +59,65 @@ def test_validate_skill_bundle_accepts_valid_skill_file():
     assert result.skill_name == "basic"
     assert result.description == "demo"
     assert result.error_code is None
+
+
+def test_resources_bundle_reads_embedded_skill_tree():
+    bundle = resources_bundle(_repo_skills_basic())
+
+    result = validate_skill_bundle(bundle)
+
+    assert result.valid is True
+    assert result.skill_name == "basic"
+    assert compute_bundle_content_hash(bundle) == compute_bundle_content_hash(
+        directory_bundle(str(_repo_skills_basic()))
+    )
+
+
+def test_resources_bundle_skips_transient_files(tmp_path):
+    root = tmp_path / "skill"
+    root.mkdir()
+    (root / "SKILL.md").write_text(_skill_md(), encoding="utf-8")
+    (root / ".kitup.json").write_text('{"ignored": true}', encoding="utf-8")
+    (root / "notes.txt~").write_text("backup", encoding="utf-8")
+    (root / ".DS_Store").write_text("junk", encoding="utf-8")
+
+    digest = compute_bundle_content_hash(resources_bundle(root))
+
+    expected = (
+        "sha256:"
+        + hashlib.sha256(
+            b"SKILL.md\x00" + _skill_md().encode("utf-8") + b"\x00"
+        ).hexdigest()
+    )
+    assert digest == expected
+
+
+def test_resources_bundle_installs_embedded_tree(tmp_path):
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    home.mkdir()
+    workspace.mkdir()
+
+    report = install_bundled_skill(
+        InstallOptions(
+            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            app_id="example-cli",
+            skill_bundle=resources_bundle(_repo_skills_basic()),
+            scope="user",
+            agents=["codex"],
+        )
+    )
+
+    target = home / ".agents" / "skills" / "basic"
+    assert len(report.installed) == 1
+    for relative in (
+        "SKILL.md",
+        "references/guide.md",
+        "assets/template.json",
+        "scripts/helper.sh",
+    ):
+        assert (target / relative).is_file()
+    assert (target / "scripts" / "helper.sh").stat().st_mode & 0o777 == 0o755
 
 
 def test_compute_bundle_content_hash_ignores_kitup_metadata(tmp_path):

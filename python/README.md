@@ -35,4 +35,13 @@ workflow = run_bundled_skill_install(
 )
 ```
 
+Embed a skill directory shipped as package data with:
+
+```python
+from importlib.resources import files
+from kitup import resources_bundle
+
+bundle = resources_bundle(files("mycli.skills") / "mycli")
+```
+
 Call `install_bundled_skill` when your CLI already knows the target scope and agents and does not need the interactive workflow surface.
