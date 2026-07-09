@@ -68,12 +68,12 @@ For full CLI flags, wire `parseInstallFlags` into `runBundledSkillInstall` with 
 For embedded bundles or public GitHub directories, pass a different `skillBundle` value to the same install call:
 
 ```ts
-import { filesBundle, githubBundle } from "@kitup/sdk";
+import { githubBundle, moduleDirBundle } from "@kitup/sdk";
 
-const embeddedSkillBundle = filesBundle([
-  { path: "SKILL.md", contents: skillMd },
-  { path: "references/guide.md", contents: guide },
-]);
+const embeddedSkillBundle = await moduleDirBundle(
+  import.meta.url,
+  "./skills/mycli",
+);
 
 const githubSkillBundle = githubBundle({
   owner: "acme",
@@ -206,6 +206,15 @@ result = run_bundled_skill_install(
         prompt_scope=True,
     )
 )
+```
+
+Embed a skill directory shipped as package data with:
+
+```python
+from importlib.resources import files
+from kitup import resources_bundle
+
+bundle = resources_bundle(files("mycli.skills") / "mycli")
 ```
 
 For non-interactive or embedding scenarios, call `install_bundled_skill`, `plan_bundled_skill`, `update_bundled_skill`, or `uninstall_bundled_skill` directly.

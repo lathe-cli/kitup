@@ -6,6 +6,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from importlib.resources.abc import Traversable
+except ImportError:
+    from importlib.abc import Traversable
+
 from ._github import fetch_github_directory
 from ._paths import normalize_bundle_path, resolve_path, skip_name
 from .types import (
@@ -44,8 +49,35 @@ def files_bundle(files: list[SkillFile]) -> FilesBundle:
     return FilesBundle(files=files)
 
 
+def resources_bundle(root: Traversable) -> FilesBundle:
+    files: list[SkillFile] = []
+    _collect_resource_files(root, "", files)
+    return files_bundle(files)
+
+
 def github_bundle(options: GitHubBundleOptions) -> GitHubBundle:
     return GitHubBundle(options=options)
+
+
+def _collect_resource_files(
+    node: Traversable, prefix: str, files: list[SkillFile]
+) -> None:
+    children = sorted(node.iterdir(), key=lambda child: child.name)
+    for child in children:
+        name = child.name
+        if skip_name(name):
+            continue
+        relative = f"{prefix}/{name}" if prefix else name
+        if isinstance(child, Path) and child.is_symlink() and child.is_dir():
+            continue
+        if child.is_dir():
+            _collect_resource_files(child, relative, files)
+            continue
+        if child.is_file():
+            mode = child.stat().st_mode & 0o777 if isinstance(child, Path) else None
+            files.append(
+                SkillFile(path=relative, contents=child.read_bytes(), mode=mode)
+            )
 
 
 def validate_skill_bundle(bundle: SkillBundle, cwd: str | None = None) -> SkillInfo:

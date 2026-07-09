@@ -11,6 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defaultHostsSpecJson } from "./hosts.generated.js";
 
 export type Scope = "user" | "project";
@@ -268,6 +269,14 @@ export function directoryBundle(path: string): SkillBundle {
 
 export function filesBundle(files: SkillFile[]): SkillBundle {
   return { kind: "files", files };
+}
+
+export async function moduleDirBundle(
+  importMetaUrl: string | URL,
+  relativePath: string,
+): Promise<SkillBundle> {
+  const root = fileURLToPath(new URL(relativePath, importMetaUrl));
+  return filesBundle(await readDirectoryBundleFiles(root));
 }
 
 export function githubBundle(options: GitHubBundleOptions): SkillBundle {

@@ -8,6 +8,7 @@ from kitup import (
     install_bundled_skill,
     plan_bundled_skill,
     resolve_install_targets,
+    resources_bundle,
     uninstall_bundled_skill,
     update_bundled_skill,
 )
@@ -354,6 +355,7 @@ def test_install_force_overwrites_unmanaged_and_owner_mismatch(tmp_path):
 
 def test_install_lifecycle_is_re_exported_from_top_level_package():
     assert kitup.directory_bundle is directory_bundle
+    assert kitup.resources_bundle is resources_bundle
     assert kitup.plan_bundled_skill is plan_bundled_skill
     assert kitup.install_bundled_skill is install_bundled_skill
     assert kitup.update_bundled_skill is update_bundled_skill

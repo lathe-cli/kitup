@@ -4,6 +4,7 @@
 .env.*
 !.env.example
 .local/
+__pycache__/
 
 node_modules/
 dist/
