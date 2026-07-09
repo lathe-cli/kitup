@@ -1,6 +1,6 @@
 # API
 
-`kitup` exposes the same installer concepts in TypeScript, Go, and Rust.
+`kitup` exposes the same installer concepts in TypeScript, Go, Rust, and Python.
 
 The core flow is:
 
@@ -25,6 +25,7 @@ import {
   installFlagError,
   installWorkflowError,
   installUxText,
+  moduleDirBundle,
   planBundledSkill,
   parseInstallFlags,
   classifyInstallWorkflowExit,
@@ -44,6 +45,12 @@ const report = await installBundledSkill({
   skillBundle: directoryBundle("./skills/mycli"),
   scope: "user",
 });
+```
+
+Embedded module-directory bundle call:
+
+```ts
+const bundle = await moduleDirBundle(import.meta.url, "./skills/mycli");
 ```
 
 Public GitHub bundle call:
@@ -72,6 +79,7 @@ Implemented functions:
 - `computeBundleContentHash(bundle, cwd?)`
 - `directoryBundle(path)`
 - `filesBundle(files)`
+- `moduleDirBundle(importMetaUrl, relativePath)`
 - `githubBundle(options)`
 - `parseInstallFlags(flags)`
 - `agentSelectorFromFlags(values)`
@@ -248,6 +256,7 @@ from kitup import (
     resolve_hosts,
     resolve_install_selection,
     resolve_install_targets,
+    resources_bundle,
     run_bundled_skill_install,
     uninstall_bundled_skill,
     update_bundled_skill,
@@ -268,6 +277,15 @@ report = install_bundled_skill(
         scope="user",
     )
 )
+```
+
+Embedded package-data bundle call:
+
+```python
+from importlib.resources import files
+from kitup import resources_bundle
+
+bundle = resources_bundle(files("mycli.skills") / "mycli")
 ```
 
 Workflow call:
@@ -306,6 +324,7 @@ Implemented functions:
 - `compute_bundle_content_hash(bundle, cwd=None)`
 - `directory_bundle(path)`
 - `files_bundle(files)`
+- `resources_bundle(root)`
 - `github_bundle(options)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`

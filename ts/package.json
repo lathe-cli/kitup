@@ -36,7 +36,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm build && tsc --noEmit && node --experimental-strip-types test/golden.test.ts"
+    "test": "pnpm build && tsc --noEmit && node --experimental-strip-types test/golden.test.ts && node --experimental-strip-types test/module-dir.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

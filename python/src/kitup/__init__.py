@@ -3,6 +3,7 @@ from .bundle import (
     directory_bundle,
     files_bundle,
     github_bundle,
+    resources_bundle,
     validate_skill_bundle,
 )
 from .hosts import detect_hosts, load_host_spec, resolve_hosts
@@ -75,6 +76,7 @@ __all__ = [
     "directory_bundle",
     "files_bundle",
     "github_bundle",
+    "resources_bundle",
     "agent_selector_from_flags",
     "classify_install_workflow_exit",
     "install_bundled_skill",
