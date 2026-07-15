@@ -1,5 +1,13 @@
 # kitup
 
+[![npm](https://img.shields.io/npm/v/@kitup/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@kitup/sdk)
+[![npm downloads](https://img.shields.io/npm/dm/@kitup/sdk?logo=npm&label=npm%20downloads)](https://www.npmjs.com/package/@kitup/sdk)
+[![Go](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fproxy.golang.org%2Fgithub.com%2Flathe-cli%2Fkitup%2Fgo%2F%40latest&query=%24.Version&label=go&logo=go&logoColor=white&color=00ADD8)](https://pkg.go.dev/github.com/lathe-cli/kitup/go)
+[![crates.io](https://img.shields.io/crates/v/kitup?logo=rust&label=crates.io)](https://crates.io/crates/kitup)
+[![crates downloads](https://img.shields.io/crates/d/kitup?logo=rust&label=crates%20downloads)](https://crates.io/crates/kitup)
+[![PyPI](https://img.shields.io/pypi/v/kitup-sdk?logo=pypi&label=pypi&logoColor=white)](https://pypi.org/project/kitup-sdk/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/kitup-sdk?logo=pypi&label=pypi%20downloads&logoColor=white)](https://pypi.org/project/kitup-sdk/)
+
 Shared installer SDK for bundled and public GitHub Agent Skills.
 
 CLI authors ship or point to a skill. `kitup` models that skill as a directory tree, resolves safe agent targets, validates `SKILL.md`,
