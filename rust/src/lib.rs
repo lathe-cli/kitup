@@ -1467,7 +1467,11 @@ fn expand_host_path(path: &str, home: &Path, cwd: &Path) -> PathBuf {
 fn defaults(options: &BaseOptions) -> io::Result<(PathBuf, PathBuf)> {
     let home = match &options.home {
         Some(home) => home.clone(),
-        None => PathBuf::from(std::env::var("HOME").unwrap_or_default()),
+        None => PathBuf::from(
+            std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_default(),
+        ),
     };
     let cwd = match &options.cwd {
         Some(cwd) => cwd.clone(),

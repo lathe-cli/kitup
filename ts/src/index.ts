@@ -10,6 +10,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultHostsSpecJson } from "./hosts.generated.js";
@@ -415,7 +416,7 @@ export async function detectHosts(
   options: BaseOptions & { scope?: Scope } = {},
 ): Promise<Host[]> {
   const spec = await loadHostSpec(options.hostsFile);
-  const home = options.home ?? process.env.HOME ?? "";
+  const home = options.home ?? homedir();
   const cwd = options.cwd ?? process.cwd();
   const detected: Host[] = [];
 
@@ -678,7 +679,7 @@ export async function resolveInstallTargets(
   detectedHostIds: string[];
 }> {
   const spec = await loadHostSpec(options.hostsFile);
-  const home = options.home ?? process.env.HOME ?? "";
+  const home = options.home ?? homedir();
   const cwd = options.cwd ?? process.cwd();
   const agents = options.agents ?? defaultAgents;
   const resolved =
