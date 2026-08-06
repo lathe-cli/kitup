@@ -134,3 +134,21 @@ Keep diffs small and behavior-led.
 - Do not update docs to describe behavior that is not implemented or covered by fixtures.
 - Do not widen v0.1 scope to make an isolated task feel complete.
 - If a requested change weakens conflict safety, metadata ownership, or parity, stop and surface the trade-off first.
+
+## Live Architecture Map
+
+The canonical architecture diagram is `docs/architecture.mmd`.
+
+Update it when these ownership boundaries change:
+
+- bundle resolution, validation, host resolution, installer semantics, or workflow entry points;
+- `.kitup.json` metadata ownership or shared schema ownership (`spec/hosts.schema.json` and `testdata/cases.schema.json`);
+- GitHub API integration or the data it returns;
+- shared golden-case parity enforcement or host-spec generation (`scripts/sync-hosts.mjs`);
+- the set of SDK language implementations.
+
+Do not update the diagram for internal refactors that preserve the same owner seams,
+tests, formatting, copy, content, or dependency-only changes.
+
+The map is the canonical source for documented system boundaries only.
+Code and runtime remain authoritative for behavior, schemas, and supported values.
