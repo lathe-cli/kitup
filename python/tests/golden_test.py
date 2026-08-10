@@ -139,6 +139,14 @@ def run_case(case, home: Path, workspace: Path) -> None:
         )
         assert [host.id for host in hosts] == case["expected"]["detectedHosts"]
 
+    if case["expected"].get("throws"):
+        try:
+            run_report_case(case, home, workspace)
+        except Exception:
+            assert_expected_files(case, home, workspace)
+            return
+        raise AssertionError("expected operation to throw")
+
     report = run_report_case(case, home, workspace)
     if "report" in case["expected"]:
         assert normalize_value(report) == camel_to_snake_dict(
@@ -371,12 +379,19 @@ def restore_github_env(env_backup) -> None:
             os.environ[key] = value
 
 
+def case_hosts_file(case, home: Path, workspace: Path) -> str:
+    raw = case["options"].get("hostsFile", "spec/hosts.json")
+    if "$HOME" in raw or "$WORKSPACE" in raw:
+        return str(expand_path(raw, home, workspace))
+    return str(repo_path(raw))
+
+
 def install_options_from_case(case, home: Path, workspace: Path) -> InstallOptions:
     return InstallOptions(
         base=BaseOptions(
             home=str(home),
             cwd=str(workspace),
-            hosts_file=repo_path("spec/hosts.json"),
+            hosts_file=case_hosts_file(case, home, workspace),
         ),
         app_id=case["options"]["appId"],
         skill_bundle=skill_bundle_from_case(case),
@@ -391,7 +406,7 @@ def uninstall_options_from_case(case, home: Path, workspace: Path) -> UninstallO
         base=BaseOptions(
             home=str(home),
             cwd=str(workspace),
-            hosts_file=repo_path("spec/hosts.json"),
+            hosts_file=case_hosts_file(case, home, workspace),
         ),
         app_id=case["options"]["appId"],
         skill_name=case["options"]["skillName"],
@@ -407,7 +422,7 @@ def selection_options_from_case(
         base=BaseOptions(
             home=str(home),
             cwd=str(workspace),
-            hosts_file=repo_path("spec/hosts.json"),
+            hosts_file=case_hosts_file(case, home, workspace),
         ),
         scope=case["options"].get("scope", "user"),
         agents=case["options"].get("agents", "auto"),

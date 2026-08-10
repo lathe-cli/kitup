@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from ._hosts_generated import DEFAULT_HOSTS_SPEC_JSON
-from .types import BaseOptions, Host, HostSpec, Scope
+from .types import BaseOptions, Host, HostSpec, KitupError, Scope
 
 _GENERIC_DETECT_PATHS = {"~/.agents", "~/.agents/skills", "~/.config/agents"}
 
@@ -11,21 +11,55 @@ def load_host_spec(hosts_file: str | None = None) -> HostSpec:
     raw = json.loads(
         Path(hosts_file).read_text() if hosts_file else DEFAULT_HOSTS_SPEC_JSON
     )
+    hosts = [
+        Host(
+            id=item["id"],
+            display_name=item["displayName"],
+            aliases=item.get("aliases", []),
+            project_skills_dirs=item["projectSkillsDirs"],
+            user_skills_dirs=item["userSkillsDirs"],
+            detect=item["detect"],
+            status=item["status"],
+            notes=item.get("notes", []),
+        )
+        for item in raw["hosts"]
+    ]
+    _validate_host_spec(hosts)
     return HostSpec(
         schema_version=raw["schemaVersion"],
-        hosts=[
-            Host(
-                id=item["id"],
-                display_name=item["displayName"],
-                aliases=item.get("aliases", []),
-                project_skills_dirs=item["projectSkillsDirs"],
-                user_skills_dirs=item["userSkillsDirs"],
-                detect=item["detect"],
-                status=item["status"],
-                notes=item.get("notes", []),
-            )
-            for item in raw["hosts"]
-        ],
+        hosts=hosts,
+    )
+
+
+def _validate_host_spec(hosts: list[Host]) -> None:
+    for host in hosts:
+        for path in host.project_skills_dirs:
+            if not _is_project_host_path(path):
+                raise KitupError(f"invalid project path {path!r} for host {host.id}")
+        for path in host.user_skills_dirs:
+            if not _is_home_host_path(path):
+                raise KitupError(f"invalid user path {path!r} for host {host.id}")
+        for path in host.detect:
+            if not _is_home_host_path(path) and not _is_project_host_path(path):
+                raise KitupError(f"invalid detect path {path!r} for host {host.id}")
+
+
+def _is_project_host_path(path: str) -> bool:
+    return (
+        bool(path)
+        and not path.startswith("/")
+        and not path.startswith("~")
+        and _is_safe_host_path(path)
+    )
+
+
+def _is_home_host_path(path: str) -> bool:
+    return path.startswith("~/") and _is_safe_host_path(path[2:])
+
+
+def _is_safe_host_path(path: str) -> bool:
+    return not any(character in path for character in "\0\\:") and not any(
+        segment in ("..", "") for segment in path.split("/")
     )
 
 

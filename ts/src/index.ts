@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   chmod,
   mkdir,
+  mkdtemp,
   lstat,
   readdir,
   readFile,
@@ -11,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultHostsSpecJson } from "./hosts.generated.js";
 
@@ -177,8 +178,20 @@ export type SkillError = { reason: SkillInfo["errorCode"] };
 export type BundleError = {
   reason: "bundle-resolve-failed";
 };
+export type InvalidSkillNameError = {
+  skillName: string;
+  reason: "invalid-skill-name";
+};
+export type InvalidAppIdError = { reason: "invalid-app-id" };
 export type TargetError =
-  UnknownHostError | UnsupportedScopeError | SkillError | BundleError;
+  | UnknownHostError
+  | UnsupportedScopeError
+  | SkillError
+  | BundleError
+  | InvalidSkillNameError
+  | InvalidAppIdError;
+
+const skillNamePattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export interface InstallReport {
   installed: TargetResult[];
@@ -377,9 +390,63 @@ export function installFlagError(
 }
 
 export async function loadHostSpec(hostsFile?: string): Promise<HostSpec> {
-  return JSON.parse(
+  const spec = JSON.parse(
     hostsFile ? await readFile(hostsFile, "utf8") : defaultHostsSpecJson,
+  ) as HostSpec;
+  validateHostSpec(spec);
+  return spec;
+}
+
+function validateHostSpec(spec: HostSpec) {
+  for (const host of spec.hosts ?? []) {
+    for (const path of host.projectSkillsDirs ?? []) {
+      if (!isProjectHostPath(path)) {
+        throw new Error(
+          `invalid project path ${JSON.stringify(path)} for host ${host.id}`,
+        );
+      }
+    }
+    for (const path of host.userSkillsDirs ?? []) {
+      if (!isHomeHostPath(path)) {
+        throw new Error(
+          `invalid user path ${JSON.stringify(path)} for host ${host.id}`,
+        );
+      }
+    }
+    for (const path of host.detect ?? []) {
+      if (!isHomeHostPath(path) && !isProjectHostPath(path)) {
+        throw new Error(
+          `invalid detect path ${JSON.stringify(path)} for host ${host.id}`,
+        );
+      }
+    }
+  }
+}
+
+function isProjectHostPath(path: string) {
+  return (
+    !!path &&
+    !path.startsWith("/") &&
+    !path.startsWith("~") &&
+    isSafeHostPath(path)
   );
+}
+
+function isHomeHostPath(path: string) {
+  return path.startsWith("~/") && isSafeHostPath(path.slice(2));
+}
+
+function isSafeHostPath(path: string) {
+  return (
+    !path.includes("\0") &&
+    !path.includes("\\") &&
+    !path.includes(":") &&
+    !path.split("/").some((segment) => segment === ".." || segment === "")
+  );
+}
+
+function isValidSkillName(skillName: string) {
+  return skillNamePattern.test(skillName);
 }
 
 export async function resolveHosts(options: {
@@ -678,6 +745,14 @@ export async function resolveInstallTargets(
   errors: TargetError[];
   detectedHostIds: string[];
 }> {
+  if (!isValidSkillName(options.skillName)) {
+    return {
+      targets: [],
+      errors: [{ skillName: options.skillName, reason: "invalid-skill-name" }],
+      detectedHostIds: [],
+    };
+  }
+
   const spec = await loadHostSpec(options.hostsFile);
   const home = options.home ?? homedir();
   const cwd = options.cwd ?? process.cwd();
@@ -798,7 +873,7 @@ function validateNormalizedSkill(bundle: NormalizedSkillBundle): SkillInfo {
   const frontmatter = parseFrontmatter(match[1]);
   const name = frontmatter.get("name") ?? "";
   const description = frontmatter.get("description") ?? "";
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+  if (!isValidSkillName(name)) {
     return { valid: false, errorCode: "invalid-frontmatter" };
   }
   if (description.length < 1 || description.length > 1024) {
@@ -1027,6 +1102,8 @@ async function installOrPlan(
   options: InstallOptions,
   write: boolean,
 ): Promise<InstallReport> {
+  if (!options.appId) return emptyInstallReport([{ reason: "invalid-app-id" }]);
+
   const cwd = options.cwd ?? process.cwd();
   let bundle: NormalizedSkillBundle;
   let bundleMetadata: BundleMetadata;
@@ -1072,7 +1149,10 @@ async function installOrPlan(
         );
       }
       report.installed.push(result);
-    } else if (!metadata.value) {
+    } else if (
+      !metadata.value ||
+      metadata.value.skillName !== skill.skillName
+    ) {
       if (options.force) {
         if (write) {
           await replaceManagedSkill(
@@ -1145,6 +1225,15 @@ export async function updateBundledSkill(
 export async function uninstallBundledSkill(
   options: UninstallOptions,
 ): Promise<UninstallReport> {
+  if (!options.appId) {
+    return {
+      removed: [],
+      skipped: [],
+      conflicts: [],
+      errors: [{ reason: "invalid-app-id" }],
+    };
+  }
+
   const { targets, errors } = await resolveInstallTargets({
     ...options,
     skillName: options.skillName,
@@ -1161,7 +1250,10 @@ export async function uninstallBundledSkill(
     const metadata = await readMetadata(target.targetDir);
     if (!metadata.exists) {
       report.skipped.push({ ...result, reason: "missing" });
-    } else if (!metadata.value) {
+    } else if (
+      !metadata.value ||
+      metadata.value.skillName !== options.skillName
+    ) {
       report.conflicts.push({ ...result, reason: "unmanaged" });
     } else if (metadata.value.appId !== options.appId) {
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
@@ -1182,9 +1274,15 @@ async function copyManagedSkill(
   hash: string,
   metadata: BundleMetadata,
 ) {
-  await rm(targetDir, { recursive: true, force: true });
-  await copySkillBundle(bundle, targetDir);
-  await writeMetadata(targetDir, appId, skillName, hash, metadata);
+  const tmp = await makeStagingDir(targetDir);
+  try {
+    await copySkillBundle(bundle, tmp);
+    await writeMetadata(tmp, appId, skillName, hash, metadata);
+    await rename(tmp, targetDir);
+  } catch (error) {
+    await rm(tmp, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 async function replaceManagedSkill(
@@ -1195,13 +1293,11 @@ async function replaceManagedSkill(
   hash: string,
   metadata: BundleMetadata,
 ) {
-  const suffix = `.kitup-${process.pid}-${Date.now()}`;
-  const tmp = `${targetDir}${suffix}`;
-  const backup = `${targetDir}${suffix}-backup`;
-  await rm(tmp, { recursive: true, force: true });
-  await copySkillBundle(bundle, tmp);
-  await writeMetadata(tmp, appId, skillName, hash, metadata);
+  const tmp = await makeStagingDir(targetDir);
+  const backup = `${tmp}-backup`;
   try {
+    await copySkillBundle(bundle, tmp);
+    await writeMetadata(tmp, appId, skillName, hash, metadata);
     await rename(targetDir, backup);
     await rename(tmp, targetDir);
     await rm(backup, { recursive: true, force: true });
@@ -1209,6 +1305,19 @@ async function replaceManagedSkill(
     await rm(tmp, { recursive: true, force: true });
     if ((await exists(backup)) && !(await exists(targetDir)))
       await rename(backup, targetDir);
+    throw error;
+  }
+}
+
+async function makeStagingDir(targetDir: string) {
+  const parent = dirname(targetDir);
+  await mkdir(parent, { recursive: true });
+  const tmp = await mkdtemp(join(parent, `.${basename(targetDir)}.kitup-`));
+  try {
+    await chmod(tmp, 0o755);
+    return tmp;
+  } catch (error) {
+    await rm(tmp, { recursive: true, force: true });
     throw error;
   }
 }
@@ -1274,13 +1383,40 @@ async function readMetadata(
 ): Promise<{ exists: boolean; value?: InstallMetadata }> {
   if (!(await exists(targetDir))) return { exists: false };
   try {
-    return {
-      exists: true,
-      value: JSON.parse(await readFile(join(targetDir, ".kitup.json"), "utf8")),
-    };
+    const raw = JSON.parse(
+      await readFile(join(targetDir, ".kitup.json"), "utf8"),
+    );
+    const value = parseOwnedMetadata(raw);
+    return value ? { exists: true, value } : { exists: true };
   } catch {
     return { exists: true };
   }
+}
+
+function parseOwnedMetadata(raw: unknown): InstallMetadata | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  if (value.schemaVersion !== 1) return undefined;
+  if (typeof value.appId !== "string" || value.appId.length === 0)
+    return undefined;
+  if (typeof value.skillName !== "string" || !isValidSkillName(value.skillName))
+    return undefined;
+  if (value.source !== "bundled" && value.source !== "github") return undefined;
+  if (typeof value.hash !== "string" || value.hash.length === 0)
+    return undefined;
+  const metadata: InstallMetadata = {
+    schemaVersion: 1,
+    appId: value.appId,
+    skillName: value.skillName,
+    source: value.source,
+    hash: value.hash,
+  };
+  if (typeof value.sourceId === "string") metadata.sourceId = value.sourceId;
+  if (typeof value.version === "string") metadata.version = value.version;
+  if (value.provenance && typeof value.provenance === "object") {
+    metadata.provenance = value.provenance as Record<string, string>;
+  }
+  return metadata;
 }
 
 function targetResult(target: TargetGroup): TargetResult {

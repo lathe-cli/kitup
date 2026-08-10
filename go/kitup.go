@@ -401,6 +401,10 @@ type normalizedSkillBundle struct {
 
 var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+func isValidSkillName(skillName string) bool {
+	return skillNamePattern.MatchString(skillName)
+}
+
 func LoadHostSpec(hostsFile string) ([]Host, error) {
 	data := []byte(defaultHostsSpecJSON)
 	if hostsFile != "" {
@@ -414,7 +418,51 @@ func LoadHostSpec(hostsFile string) ([]Host, error) {
 	if err := json.Unmarshal(data, &spec); err != nil {
 		return nil, err
 	}
+	if err := validateHostSpec(spec.Hosts); err != nil {
+		return nil, err
+	}
 	return spec.Hosts, nil
+}
+
+func validateHostSpec(hosts []Host) error {
+	for _, host := range hosts {
+		for _, path := range host.ProjectSkillsDir {
+			if !isProjectHostPath(path) {
+				return fmt.Errorf("invalid project path %q for host %q", path, host.ID)
+			}
+		}
+		for _, path := range host.UserSkillsDir {
+			if !isHomeHostPath(path) {
+				return fmt.Errorf("invalid user path %q for host %q", path, host.ID)
+			}
+		}
+		for _, path := range host.Detect {
+			if !isHomeHostPath(path) && !isProjectHostPath(path) {
+				return fmt.Errorf("invalid detect path %q for host %q", path, host.ID)
+			}
+		}
+	}
+	return nil
+}
+
+func isProjectHostPath(path string) bool {
+	return path != "" && !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~") && isSafeHostPath(path)
+}
+
+func isHomeHostPath(path string) bool {
+	return strings.HasPrefix(path, "~/") && isSafeHostPath(path[2:])
+}
+
+func isSafeHostPath(path string) bool {
+	if strings.ContainsAny(path, "\x00\\:") {
+		return false
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == ".." || segment == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func ResolveHosts(agents AgentSelector, hosts []Host) ([]Host, []map[string]any) {
@@ -522,6 +570,12 @@ func ResolveInstallSelection(opts InstallSelectionOptions) (InstallSelection, er
 }
 
 func ResolveInstallTargets(opts BaseOptions, agents AgentSelector, scope Scope, skillName string) ([]TargetGroup, []map[string]any, []string, error) {
+	if !isValidSkillName(skillName) {
+		return nil, []map[string]any{{
+			"skillName": skillName,
+			"reason":    "invalid-skill-name",
+		}}, nil, nil
+	}
 	hosts, err := LoadHostSpec(opts.HostsFile)
 	if err != nil {
 		return nil, nil, nil, err
@@ -644,7 +698,7 @@ func validateNormalizedSkill(bundle normalizedSkillBundle) SkillInfo {
 	fields := parseFrontmatter(text[4 : 4+end])
 	name := fields["name"]
 	description := fields["description"]
-	if !skillNamePattern.MatchString(name) || len(description) < 1 || len(description) > 1024 {
+	if !isValidSkillName(name) || len(description) < 1 || len(description) > 1024 {
 		return SkillInfo{Valid: false, ErrorCode: "invalid-frontmatter"}
 	}
 	return SkillInfo{Valid: true, SkillName: name, Description: description}
@@ -783,6 +837,9 @@ func UpdateBundledSkill(opts InstallOptions) (InstallReport, error) {
 }
 
 func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
+	if opts.AppID == "" {
+		return emptyUninstallReport([]map[string]any{{"reason": "invalid-app-id"}}), nil
+	}
 	targets, errs, _, err := ResolveInstallTargets(opts.BaseOptions, opts.Agents, opts.Scope, opts.SkillName)
 	if err != nil {
 		return UninstallReport{}, err
@@ -794,7 +851,7 @@ func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
 		switch {
 		case !present:
 			report.Skipped = append(report.Skipped, withReason(result, "missing"))
-		case !managed:
+		case !managed || meta.SkillName != opts.SkillName:
 			report.Conflicts = append(report.Conflicts, withReason(result, "unmanaged"))
 		case meta.AppID != opts.AppID:
 			report.Conflicts = append(report.Conflicts, withReason(result, "owner-mismatch"))
@@ -809,6 +866,9 @@ func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
 }
 
 func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
+	if opts.AppID == "" {
+		return emptyInstallReport([]map[string]any{{"reason": "invalid-app-id"}}), nil
+	}
 	bundle, bundleMeta, err := resolveSkillBundle(opts.SkillBundle)
 	if err != nil {
 		reason := "invalid-skill-bundle"
@@ -838,7 +898,7 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 				}
 			}
 			report.Installed = append(report.Installed, result)
-		case !managed:
+		case !managed || meta.SkillName != skill.SkillName:
 			if opts.Force {
 				if write {
 					if err := replaceManagedSkill(bundle, target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
@@ -888,21 +948,33 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 }
 
 func copyManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
-	if err := os.RemoveAll(targetDir); err != nil {
+	tmp, err := makeStagingDir(targetDir)
+	if err != nil {
 		return err
 	}
-	if err := copySkillBundle(bundle, targetDir); err != nil {
+	if err := copySkillBundle(bundle, tmp); err != nil {
+		_ = os.RemoveAll(tmp)
 		return err
 	}
-	return writeMetadata(targetDir, appID, skillName, hash, bundleMeta)
+	if err := writeMetadata(tmp, appID, skillName, hash, bundleMeta); err != nil {
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, targetDir); err != nil {
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	return nil
 }
 
 func replaceManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
-	suffix := ".kitup-" + time.Now().Format("20060102150405.000000000")
-	tmp := targetDir + suffix
-	backup := targetDir + suffix + "-backup"
-	_ = os.RemoveAll(tmp)
+	tmp, err := makeStagingDir(targetDir)
+	if err != nil {
+		return err
+	}
+	backup := tmp + "-backup"
 	if err := copySkillBundle(bundle, tmp); err != nil {
+		_ = os.RemoveAll(tmp)
 		return err
 	}
 	if err := writeMetadata(tmp, appID, skillName, hash, bundleMeta); err != nil {
@@ -921,6 +993,22 @@ func replaceManagedSkill(bundle normalizedSkillBundle, targetDir, appID, skillNa
 		return err
 	}
 	return os.RemoveAll(backup)
+}
+
+func makeStagingDir(targetDir string) (string, error) {
+	parent := filepath.Dir(targetDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return "", err
+	}
+	tmp, err := os.MkdirTemp(parent, "."+filepath.Base(targetDir)+".kitup-")
+	if err != nil {
+		return "", err
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		_ = os.RemoveAll(tmp)
+		return "", err
+	}
+	return tmp, nil
 }
 
 func copySkillBundle(bundle normalizedSkillBundle, dest string) error {
@@ -999,7 +1087,18 @@ func readMetadata(targetDir string) (metadata, bool, bool) {
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return metadata{}, true, false
 	}
+	if !isOwnedMetadata(meta) {
+		return metadata{}, true, false
+	}
 	return meta, true, true
+}
+
+func isOwnedMetadata(meta metadata) bool {
+	return meta.SchemaVersion == 1 &&
+		meta.AppID != "" &&
+		isValidSkillName(meta.SkillName) &&
+		(meta.Source == "bundled" || meta.Source == "github") &&
+		meta.Hash != ""
 }
 
 func targetResult(target TargetGroup) TargetResult {

@@ -11,6 +11,7 @@ Each host entry describes where a local Agent Skill can be installed and how the
 The first path is the canonical install target for that host. Later paths are compatible discovery roots that the host also scans. SDKs should install to the first path unless a caller explicitly requests another supported path.
 
 Project paths must be relative paths. User paths must be home-relative paths beginning with `~/`.
+All adapter paths use `/` separators and non-empty segments; `..`, backslashes, colons, and NUL bytes are invalid.
 
 If multiple selected hosts resolve to the same target directory, SDKs must copy once and associate that installed target with every matching host. Shared roots such as `.agents/skills` are common and should not produce duplicate writes.
 

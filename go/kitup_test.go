@@ -97,7 +97,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 		}), tc.Expected["parsed"].(map[string]any))
 	case "resolve-install-selection":
 		selection, err := ResolveInstallSelection(InstallSelectionOptions{
-			BaseOptions: baseOptions(home, workspace),
+			BaseOptions: caseBaseOptions(tc, home, workspace),
 			Scope:       Scope(opts["scope"].(string)),
 			Agents:      agentSelector(opts["agents"]),
 			Yes:         boolValue(opts["yes"]),
@@ -109,7 +109,7 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 		var out bytes.Buffer
 		report, err := RunBundledSkillInstall(InstallWorkflowOptions{
 			InstallOptions: InstallOptions{
-				BaseOptions: baseOptions(home, workspace),
+				BaseOptions: caseBaseOptions(tc, home, workspace),
 				AppID:       opts["appId"].(string),
 				SkillBundle: skillBundleFromOptions(opts),
 				Scope:       Scope(stringValue(opts["scope"])),
@@ -139,12 +139,21 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 		assertExpectedFileModes(t, tc, home, workspace)
 		assertExpectedMetadata(t, tc, home, workspace)
 	default:
+		base := caseBaseOptions(tc, home, workspace)
 		if expected, ok := tc.Expected["detectedHosts"]; ok {
-			hosts, err := DetectHosts(BaseOptions{Home: home, CWD: workspace, HostsFile: repoPathFromCase("spec/hosts.json")}, Scope(opts["scope"].(string)))
+			hosts, err := DetectHosts(base, Scope(opts["scope"].(string)))
 			must(t, err)
 			equal(t, hostIDs(hosts), expected)
 		}
-		report := runReportCase(t, tc, opts, home, workspace)
+		report, err := runReportCase(t, tc, opts, base)
+		if throws, ok := tc.Expected["throws"].(bool); ok && throws {
+			if err == nil {
+				t.Fatal("expected operation to throw")
+			}
+			assertExpectedFiles(t, tc, home, workspace)
+			return
+		}
+		must(t, err)
 		if expected, ok := tc.Expected["report"]; ok {
 			equal(t, report, expandValue(expected, home, workspace))
 		}
@@ -155,19 +164,16 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 	}
 }
 
-func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, home, workspace string) any {
-	base := baseOptions(home, workspace)
+func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, base BaseOptions) (any, error) {
 	switch tc.Operation {
 	case "uninstall":
-		report, err := UninstallBundledSkill(UninstallOptions{
+		return UninstallBundledSkill(UninstallOptions{
 			BaseOptions: base,
 			AppID:       opts["appId"].(string),
 			SkillName:   opts["skillName"].(string),
 			Scope:       Scope(opts["scope"].(string)),
 			Agents:      agentSelector(opts["agents"]),
 		})
-		must(t, err)
-		return report
 	case "install", "update", "plan":
 		fn := InstallBundledSkill
 		if tc.Operation == "update" {
@@ -176,23 +182,35 @@ func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, home, works
 		if tc.Operation == "plan" {
 			fn = PlanBundledSkill
 		}
-		report, err := fn(InstallOptions{
+		return fn(InstallOptions{
 			BaseOptions: base,
 			AppID:       opts["appId"].(string),
 			SkillBundle: skillBundleFromOptions(opts),
 			Scope:       Scope(opts["scope"].(string)),
 			Agents:      agentSelector(opts["agents"]),
+			Force:       boolValue(opts["force"]),
 		})
-		must(t, err)
-		return report
 	default:
 		t.Fatalf("unsupported operation: %s", tc.Operation)
-		return nil
+		return nil, nil
 	}
 }
 
 func baseOptions(home, workspace string) BaseOptions {
 	return BaseOptions{Home: home, CWD: workspace, HostsFile: repoPathFromCase("spec/hosts.json")}
+}
+
+func caseBaseOptions(tc goldenCase, home, workspace string) BaseOptions {
+	base := baseOptions(home, workspace)
+	if hostsFile, ok := tc.Options["hostsFile"].(string); ok && hostsFile != "" {
+		expanded := expandString(hostsFile, home, workspace)
+		if filepath.IsAbs(expanded) {
+			base.HostsFile = expanded
+		} else {
+			base.HostsFile = repoPathFromCase(expanded)
+		}
+	}
+	return base
 }
 
 func setupGiven(t *testing.T, tc goldenCase, home, workspace string) {

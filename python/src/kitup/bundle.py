@@ -12,6 +12,7 @@ except ImportError:
     from importlib.abc import Traversable
 
 from ._github import fetch_github_directory
+from ._metadata import is_valid_skill_name
 from ._paths import normalize_bundle_path, resolve_path, skip_name
 from .types import (
     BundleFile,
@@ -106,7 +107,11 @@ def validate_normalized_skill_bundle(normalized: NormalizedSkillBundle) -> Skill
     fields = _parse_frontmatter(match.group(1))
     skill_name = fields.get("name", "")
     description = fields.get("description", "")
-    if not _valid_skill_name(skill_name) or not description or len(description) > 1024:
+    if (
+        not is_valid_skill_name(skill_name)
+        or not description
+        or len(description) > 1024
+    ):
         return SkillInfo(valid=False, error_code="invalid-frontmatter")
 
     return SkillInfo(valid=True, skill_name=skill_name, description=description)
@@ -214,7 +219,3 @@ def _parse_frontmatter(content: str) -> dict[str, str]:
         key, value = line.split(":", 1)
         fields[key] = value.strip()
     return fields
-
-
-def _valid_skill_name(name: str) -> bool:
-    return re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is not None

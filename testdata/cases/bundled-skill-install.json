@@ -476,7 +476,10 @@
         "filesPresent": [
           "$WORKSPACE/.agents/skills/basic/SKILL.md",
           "$WORKSPACE/.agents/skills/basic/.kitup.json"
-        ]
+        ],
+        "fileModes": {
+          "$WORKSPACE/.agents/skills/basic": "755"
+        }
       }
     },
     {
@@ -1249,6 +1252,156 @@
             }
           ],
           "errors": []
+        }
+      }
+    },
+    {
+      "id": "install-incomplete-metadata-conflict",
+      "operation": "install",
+      "description": "Treats incomplete .kitup.json as unmanaged and refuses overwrite.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "appId": "example-cli"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "install-skill-name-mismatch-conflict",
+      "operation": "install",
+      "description": "Treats metadata for a different skill name as unmanaged and refuses overwrite.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "other",
+            "source": "bundled",
+            "hash": "sha256:old"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "update-skill-name-mismatch-with-force",
+      "operation": "update",
+      "description": "Force replaces metadata for a different skill name and records the requested owner.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "force": true,
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "other",
+            "source": "bundled",
+            "hash": "sha256:old"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/SKILL.md"
+        ],
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          }
         }
       }
     },
@@ -2525,6 +2678,395 @@
           "conflicts": [],
           "errors": []
         }
+      }
+    },
+    {
+      "id": "uninstall-rejects-path-traversal-skill-name",
+      "operation": "uninstall",
+      "description": "Refuses skill names that escape the install root and never deletes a sibling owned install.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "../victim",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/victim"
+        ],
+        "files": {
+          "$HOME/.agents/victim/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "victim",
+            "source": "bundled",
+            "hash": "sha256:abc"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": [
+            {
+              "skillName": "../victim",
+              "reason": "invalid-skill-name"
+            }
+          ]
+        },
+        "filesPresent": [
+          "$HOME/.agents/victim/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "uninstall-incomplete-metadata-conflict",
+      "operation": "uninstall",
+      "description": "Treats incomplete .kitup.json as unmanaged and refuses deletion.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "appId": "example-cli"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "uninstall-skill-name-mismatch-conflict",
+      "operation": "uninstall",
+      "description": "Refuses deletion when metadata skillName does not exactly match the requested skill.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "other",
+            "source": "bundled",
+            "hash": "sha256:abc"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [],
+          "skipped": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "hosts-file-rejects-escaped-project-path",
+      "operation": "install",
+      "description": "Rejects a custom hosts file whose project path escapes the workspace root.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "project",
+        "agents": [
+          "evil"
+        ],
+        "hostsFile": "$WORKSPACE/hosts.json",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$WORKSPACE/hosts.json": {
+            "schemaVersion": 1,
+            "hosts": [
+              {
+                "id": "evil",
+                "displayName": "Evil",
+                "projectSkillsDirs": [
+                  "../outside"
+                ],
+                "userSkillsDirs": [],
+                "detect": [
+                  ".agents"
+                ],
+                "status": "community"
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "throws": true,
+        "filesAbsent": [
+          "$WORKSPACE/../outside/basic",
+          "$HOME/../outside/basic"
+        ]
+      }
+    },
+    {
+      "id": "hosts-file-rejects-windows-project-path",
+      "operation": "install",
+      "description": "Rejects a custom hosts file whose Windows-style project path escapes the workspace root.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "project",
+        "agents": [
+          "evil"
+        ],
+        "hostsFile": "$WORKSPACE/hosts.json",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$WORKSPACE/hosts.json": {
+            "schemaVersion": 1,
+            "hosts": [
+              {
+                "id": "evil",
+                "displayName": "Evil",
+                "projectSkillsDirs": [
+                  "..\\outside"
+                ],
+                "userSkillsDirs": [],
+                "detect": [
+                  ".agents"
+                ],
+                "status": "community"
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "throws": true,
+        "filesAbsent": [
+          "$WORKSPACE/../outside/basic"
+        ]
+      }
+    },
+    {
+      "id": "hosts-file-rejects-windows-home-path",
+      "operation": "install",
+      "description": "Rejects a custom hosts file whose home path contains a Windows volume path.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "evil"
+        ],
+        "hostsFile": "$WORKSPACE/hosts.json",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$WORKSPACE/hosts.json": {
+            "schemaVersion": 1,
+            "hosts": [
+              {
+                "id": "evil",
+                "displayName": "Evil",
+                "projectSkillsDirs": [],
+                "userSkillsDirs": [
+                  "~/C:/outside"
+                ],
+                "detect": [
+                  "~/.agents"
+                ],
+                "status": "community"
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "throws": true,
+        "filesAbsent": [
+          "$HOME/C:/outside/basic"
+        ]
+      }
+    },
+    {
+      "id": "install-rejects-empty-app-id",
+      "operation": "install",
+      "description": "Rejects an empty owner id before writing install metadata.",
+      "options": {
+        "appId": "",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": [
+            {
+              "reason": "invalid-app-id"
+            }
+          ]
+        },
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic"
+        ]
+      }
+    },
+    {
+      "id": "uninstall-rejects-empty-app-id",
+      "operation": "uninstall",
+      "description": "Rejects an empty owner id before considering a managed install for deletion.",
+      "options": {
+        "appId": "",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "sha256:abc"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": [
+            {
+              "reason": "invalid-app-id"
+            }
+          ]
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "initial-install-copy-failure-is-atomic",
+      "operation": "install",
+      "description": "Leaves no target behind when a new install fails while copying its bundle.",
+      "options": {
+        "appId": "example-cli",
+        "skillFiles": [
+          {
+            "path": "SKILL.md",
+            "contents": "---\nname: atomic-failure\ndescription: Atomic initial install fixture.\n---\n"
+          },
+          {
+            "path": "a",
+            "contents": "file\n"
+          },
+          {
+            "path": "a/b",
+            "contents": "nested\n"
+          }
+        ],
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "throws": true,
+        "filesAbsent": [
+          "$HOME/.agents/skills/atomic-failure"
+        ]
       }
     }
   ]
