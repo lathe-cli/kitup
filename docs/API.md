@@ -344,7 +344,7 @@ Implemented functions:
 
 Install options use the same concepts across languages:
 
-- `appId` / `AppID` / `app_id`: owner id written to `.kitup.json`
+- `appId` / `AppID` / `app_id`: non-empty owner id written to `.kitup.json`
 - `skillBundle` / `SkillBundle` / `skill_bundle`: local directory, embedded files, or public GitHub bundle
 - `scope`: `user` or `project`
 - `agents`: `"auto"`, `"*"`, or explicit host ids

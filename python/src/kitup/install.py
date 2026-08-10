@@ -6,7 +6,11 @@ import tempfile
 from pathlib import Path
 
 from ._github import fetch_github_directory_with_metadata
-from ._metadata import read_install_metadata, write_install_metadata
+from ._metadata import (
+    is_valid_skill_name,
+    read_install_metadata,
+    write_install_metadata,
+)
 from .bundle import (
     DirectoryBundle,
     FilesBundle,
@@ -120,17 +124,6 @@ def write_managed_bundle(
     metadata: dict[str, object],
     replace: bool,
 ) -> None:
-    if not replace:
-        copy_normalized_bundle(files, target_dir)
-        write_bundle_metadata(
-            target_dir,
-            app_id=app_id,
-            skill_name=skill_name,
-            digest=digest,
-            metadata=metadata,
-        )
-        return
-
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     staged_dir = Path(
         tempfile.mkdtemp(
@@ -140,6 +133,7 @@ def write_managed_bundle(
     )
     backup_dir: Path | None = None
     try:
+        staged_dir.chmod(0o755)
         copy_normalized_bundle(files, staged_dir)
         write_bundle_metadata(
             staged_dir,
@@ -148,16 +142,19 @@ def write_managed_bundle(
             digest=digest,
             metadata=metadata,
         )
-        backup_dir = Path(
-            tempfile.mkdtemp(
-                prefix=f".{target_dir.name}.kitup-old-",
-                dir=target_dir.parent,
+        if replace and target_dir.exists():
+            backup_dir = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{target_dir.name}.kitup-old-",
+                    dir=target_dir.parent,
+                )
             )
-        )
-        backup_dir.rmdir()
-        target_dir.replace(backup_dir)
+            backup_dir.rmdir()
+            target_dir.replace(backup_dir)
+            staged_dir.replace(target_dir)
+            shutil.rmtree(backup_dir)
+            return
         staged_dir.replace(target_dir)
-        shutil.rmtree(backup_dir)
     except Exception:
         if backup_dir is not None and backup_dir.exists() and not target_dir.exists():
             backup_dir.replace(target_dir)
@@ -166,6 +163,9 @@ def write_managed_bundle(
 
 
 def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
+    if not options.app_id:
+        return empty_install_report([TargetError(reason="invalid-app-id")])
+
     try:
         normalized, bundle_metadata = _resolve_bundle_and_metadata(
             options.skill_bundle, cwd=options.base.cwd
@@ -195,7 +195,6 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
     for target in targets:
         result = target_result(target)
         target_dir = Path(target.target_dir)
-        metadata_file = target_dir / ".kitup.json"
         metadata = read_install_metadata(target_dir)
 
         if not target_dir.exists():
@@ -212,23 +211,7 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
             report.installed.append(result)
             continue
 
-        if metadata is None and metadata_file.exists():
-            if options.force:
-                if write:
-                    write_managed_bundle(
-                        target_dir,
-                        app_id=options.app_id,
-                        skill_name=info.skill_name,
-                        digest=digest,
-                        metadata=bundle_metadata,
-                        files=normalized.files,
-                        replace=True,
-                    )
-                report.updated.append(result)
-            else:
-                report.conflicts.append(target_status(target, "unmanaged"))
-            continue
-        if metadata is None:
+        if metadata is None or metadata.get("skillName") != info.skill_name:
             if options.force:
                 if write:
                     write_managed_bundle(
@@ -328,6 +311,9 @@ def write_bundle_metadata(
 
 
 def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
+    if not options.app_id:
+        return empty_uninstall_report([TargetError(reason="invalid-app-id")])
+
     targets, errors = _resolve_install_targets_with_errors(
         options.base,
         options.agents,
@@ -338,16 +324,12 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
     for target in targets:
         result = target_result(target)
         target_dir = Path(target.target_dir)
-        metadata_file = target_dir / ".kitup.json"
         metadata = read_install_metadata(target_dir)
 
         if not target_dir.exists():
             report.skipped.append(target_status(target, "missing"))
             continue
-        if metadata is None and metadata_file.exists():
-            report.conflicts.append(target_status(target, "unmanaged"))
-            continue
-        if metadata is None:
+        if metadata is None or metadata.get("skillName") != options.skill_name:
             report.conflicts.append(target_status(target, "unmanaged"))
             continue
         if metadata.get("appId") != options.app_id:
@@ -381,6 +363,9 @@ def _resolve_install_targets_with_errors(
     scope: Scope,
     skill_name: str,
 ) -> tuple[list[TargetGroup], list[TargetError]]:
+    if not is_valid_skill_name(skill_name):
+        return [], [TargetError(reason="invalid-skill-name", skill_name=skill_name)]
+
     spec = load_host_spec(options.hosts_file)
     home = Path(options.home).expanduser() if options.home else Path.home()
     cwd = Path(options.cwd) if options.cwd else Path.cwd()

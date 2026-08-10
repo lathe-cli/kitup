@@ -33,13 +33,31 @@ function shouldRun(group) {
   return selectedGroups.size === 0 || selectedGroups.has(group);
 }
 
-function validateHosts(spec) {
+function validateHosts(spec, schema) {
   assert(spec.schemaVersion === 1, "hosts schemaVersion must be 1");
   assert(Array.isArray(spec.hosts), "hosts must be an array");
 
   const idPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-  const projectPattern = /^(?!\/)(?!~)(?!.*(^|\/)\.\.(\/|$))[^\0]+$/;
-  const homePattern = /^~\/[^\0]+$/;
+  const projectPattern = new RegExp(schema.$defs.projectPath.pattern);
+  const homePattern = new RegExp(schema.$defs.homePath.pattern);
+  for (const path of [
+    "../outside",
+    "..\\outside",
+    "C:/outside",
+    "a//b",
+    "a/",
+  ]) {
+    assert(!projectPattern.test(path), `unsafe project path accepted: ${path}`);
+  }
+  for (const path of [
+    "~/../outside",
+    "~/..\\outside",
+    "~/C:/outside",
+    "~//a",
+    "~/a/",
+  ]) {
+    assert(!homePattern.test(path), `unsafe user path accepted: ${path}`);
+  }
   const statuses = new Set([
     "verified",
     "documented",
@@ -280,10 +298,10 @@ function validateReleaseWorkflow() {
 
 const hostsSpec = readJson("spec/hosts.json");
 const cases = readJson("testdata/cases/bundled-skill-install.json");
-readJson("spec/hosts.schema.json");
+const hostsSchema = readJson("spec/hosts.schema.json");
 readJson("testdata/cases.schema.json");
 
-const { ids, aliases } = validateHosts(hostsSpec);
+const { ids, aliases } = validateHosts(hostsSpec, hostsSchema);
 validateCases(cases, hostsSpec.hosts);
 validateFixtures();
 validateVersions();
@@ -332,7 +350,13 @@ for (const [group, name, command, args, cwd, env] of [
     rootPath,
   ],
   ["typescript", "typescript", "pnpm", ["--dir", "ts", "test"], rootPath],
-  ["go", "go", "go", ["test", "./..."], new URL("../go/", import.meta.url)],
+  [
+    "go",
+    "go",
+    "go",
+    ["test", "-count=1", "./..."],
+    new URL("../go/", import.meta.url),
+  ],
   [
     "go",
     "go-cobra",

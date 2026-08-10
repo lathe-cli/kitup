@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {
@@ -326,8 +327,13 @@ pub struct InstallWorkflowExit {
 
 #[derive(Deserialize)]
 struct Metadata {
+    #[serde(rename = "schemaVersion")]
+    schema_version: u32,
     #[serde(rename = "appId")]
     app_id: String,
+    #[serde(rename = "skillName")]
+    skill_name: String,
+    source: String,
     hash: String,
 }
 
@@ -460,7 +466,55 @@ pub fn load_host_spec(hosts_file: Option<&Path>) -> io::Result<Vec<Host>> {
         Some(path) => serde_json::from_slice(&fs::read(path)?)?,
         None => serde_json::from_str(hosts_generated::DEFAULT_HOSTS_SPEC_JSON)?,
     };
+    validate_host_spec(&spec.hosts)?;
     Ok(spec.hosts)
+}
+
+fn validate_host_spec(hosts: &[Host]) -> io::Result<()> {
+    for host in hosts {
+        for path in &host.project_skills_dirs {
+            if !is_project_host_path(path) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("invalid project path {path:?} for host {}", host.id),
+                ));
+            }
+        }
+        for path in &host.user_skills_dirs {
+            if !is_home_host_path(path) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("invalid user path {path:?} for host {}", host.id),
+                ));
+            }
+        }
+        for path in &host.detect {
+            if !is_home_host_path(path) && !is_project_host_path(path) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("invalid detect path {path:?} for host {}", host.id),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_project_host_path(path: &str) -> bool {
+    !path.is_empty() && !path.starts_with('/') && !path.starts_with('~') && is_safe_host_path(path)
+}
+
+fn is_home_host_path(path: &str) -> bool {
+    path.starts_with("~/") && is_safe_host_path(&path[2..])
+}
+
+fn is_safe_host_path(path: &str) -> bool {
+    !path
+        .chars()
+        .any(|character| matches!(character, '\0' | '\\' | ':'))
+        && !path
+            .split('/')
+            .any(|segment| segment == ".." || segment.is_empty())
 }
 
 pub fn resolve_hosts(agents: &AgentSelector, hosts: &[Host]) -> (Vec<Host>, Vec<Value>) {
@@ -608,6 +662,16 @@ pub fn resolve_install_targets(
     scope: Scope,
     skill_name: &str,
 ) -> io::Result<(Vec<TargetGroup>, Vec<Value>, Vec<String>)> {
+    if !valid_skill_name(skill_name) {
+        return Ok((
+            vec![],
+            vec![json!({
+                "skillName": skill_name,
+                "reason": "invalid-skill-name"
+            })],
+            vec![],
+        ));
+    }
     let hosts = load_host_spec(options.hosts_file.as_deref())?;
     let (home, cwd) = defaults(options)?;
     let (selected, mut errors) = match agents {
@@ -920,6 +984,11 @@ pub fn update_bundled_skill(options: &InstallOptions) -> io::Result<InstallRepor
 }
 
 pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<UninstallReport> {
+    if options.app_id.is_empty() {
+        return Ok(uninstall_report(vec![json!({
+            "reason": "invalid-app-id"
+        })]));
+    }
     let (targets, errors, _) = resolve_install_targets(
         &options.base,
         &options.agents,
@@ -932,6 +1001,9 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Uninsta
         match read_metadata(&target.target_dir) {
             MetadataState::Missing => report.skipped.push(with_reason(result, "missing")),
             MetadataState::Unmanaged => report.conflicts.push(with_reason(result, "unmanaged")),
+            MetadataState::Managed(meta) if meta.skill_name != options.skill_name => {
+                report.conflicts.push(with_reason(result, "unmanaged"))
+            }
             MetadataState::Managed(meta) if meta.app_id != options.app_id => {
                 report.conflicts.push(with_reason(result, "owner-mismatch"))
             }
@@ -945,6 +1017,11 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Uninsta
 }
 
 fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallReport> {
+    if options.app_id.is_empty() {
+        return Ok(install_report(vec![json!({
+            "reason": "invalid-app-id"
+        })]));
+    }
     let (bundle, bundle_metadata) = match resolve_skill_bundle(&options.skill_bundle) {
         Ok(value) => value,
         Err(_) => {
@@ -986,6 +1063,23 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                 report.installed.push(result);
             }
             MetadataState::Unmanaged => {
+                if options.force {
+                    if write {
+                        replace_managed_skill(
+                            &bundle,
+                            &target.target_dir,
+                            &options.app_id,
+                            &skill_name,
+                            &hash,
+                            &bundle_metadata,
+                        )?;
+                    }
+                    report.updated.push(result);
+                } else {
+                    report.conflicts.push(with_reason(result, "unmanaged"));
+                }
+            }
+            MetadataState::Managed(meta) if meta.skill_name != skill_name => {
                 if options.force {
                     if write {
                         replace_managed_skill(
@@ -1067,9 +1161,17 @@ fn copy_managed_skill(
     hash: &str,
     bundle_metadata: &BundleMetadata,
 ) -> io::Result<()> {
-    let _ = fs::remove_dir_all(target_dir);
-    copy_skill_bundle(bundle, target_dir)?;
-    write_metadata(target_dir, app_id, skill_name, hash, bundle_metadata)
+    let tmp = make_staging_dir(target_dir)?;
+    if let Err(error) = (|| -> io::Result<()> {
+        copy_skill_bundle(bundle, &tmp)?;
+        write_metadata(&tmp, app_id, skill_name, hash, bundle_metadata)?;
+        fs::rename(&tmp, target_dir)?;
+        Ok(())
+    })() {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn replace_managed_skill(
@@ -1080,19 +1182,20 @@ fn replace_managed_skill(
     hash: &str,
     bundle_metadata: &BundleMetadata,
 ) -> io::Result<()> {
-    let suffix = format!(
-        ".kitup-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let tmp = PathBuf::from(format!("{}{}", target_dir.display(), suffix));
-    let backup = PathBuf::from(format!("{}{}-backup", target_dir.display(), suffix));
-    let _ = fs::remove_dir_all(&tmp);
-    copy_skill_bundle(bundle, &tmp)?;
-    write_metadata(&tmp, app_id, skill_name, hash, bundle_metadata)?;
-    fs::rename(target_dir, &backup)?;
+    let tmp = make_staging_dir(target_dir)?;
+    let backup = PathBuf::from(format!("{}-backup", tmp.display()));
+    if let Err(error) = copy_skill_bundle(bundle, &tmp) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(error);
+    }
+    if let Err(error) = write_metadata(&tmp, app_id, skill_name, hash, bundle_metadata) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(error);
+    }
+    if let Err(error) = fs::rename(target_dir, &backup) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(error);
+    }
     if let Err(error) = fs::rename(&tmp, target_dir) {
         let _ = fs::remove_dir_all(&tmp);
         if !target_dir.exists() && backup.exists() {
@@ -1101,6 +1204,37 @@ fn replace_managed_skill(
         return Err(error);
     }
     fs::remove_dir_all(backup)
+}
+
+static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn make_staging_dir(target_dir: &Path) -> io::Result<PathBuf> {
+    let parent = target_dir.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "install target has no parent")
+    })?;
+    fs::create_dir_all(parent)?;
+    let name = target_dir
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "install target has no name"))?
+        .to_string_lossy();
+    loop {
+        let candidate = parent.join(format!(
+            ".{name}.kitup-{}-{}",
+            std::process::id(),
+            STAGING_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        match fs::create_dir(&candidate) {
+            Ok(()) => {
+                if let Err(error) = set_mode(&candidate, 0o755) {
+                    let _ = fs::remove_dir_all(&candidate);
+                    return Err(error);
+                }
+                return Ok(candidate);
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn copy_skill_bundle(bundle: &NormalizedSkillBundle, dest: &Path) -> io::Result<()> {
@@ -1179,10 +1313,18 @@ fn read_metadata(target_dir: &Path) -> MetadataState {
     let Ok(data) = fs::read(target_dir.join(".kitup.json")) else {
         return MetadataState::Unmanaged;
     };
-    match serde_json::from_slice(&data) {
-        Ok(meta) => MetadataState::Managed(meta),
-        Err(_) => MetadataState::Unmanaged,
+    match serde_json::from_slice::<Metadata>(&data) {
+        Ok(meta) if is_owned_metadata(&meta) => MetadataState::Managed(meta),
+        _ => MetadataState::Unmanaged,
     }
+}
+
+fn is_owned_metadata(meta: &Metadata) -> bool {
+    meta.schema_version == 1
+        && !meta.app_id.is_empty()
+        && valid_skill_name(&meta.skill_name)
+        && (meta.source == "bundled" || meta.source == "github")
+        && !meta.hash.is_empty()
 }
 
 fn target_result(target: &TargetGroup) -> TargetResult {

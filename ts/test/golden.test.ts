@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   rm,
   stat,
   chmod,
@@ -34,7 +35,7 @@ import {
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 const casesFile = join(repo, "testdata/cases/bundled-skill-install.json");
-const hostsFile = join(repo, "spec/hosts.json");
+const defaultHostsFile = join(repo, "spec/hosts.json");
 const cases = JSON.parse(await readFile(casesFile, "utf8")).cases;
 
 let passed = 0;
@@ -56,10 +57,77 @@ for (const testCase of cases) {
   }
 }
 
+await assertConcurrentInitialInstallIsolation();
+
+function caseHostsFile(options: any, home: string, workspace: string) {
+  if (!options.hostsFile) return defaultHostsFile;
+  const expanded = expandValue(options.hostsFile, home, workspace);
+  return expanded.startsWith("/") ? expanded : resolveRepoPath(expanded);
+}
+
 console.log(`ok: ${passed} TypeScript golden cases`);
+
+async function assertConcurrentInitialInstallIsolation() {
+  const root = await mkdtemp(join(tmpdir(), "kitup-concurrent-install-"));
+  const home = join(root, "home");
+  const workspace = join(root, "workspace");
+  await mkdir(home, { recursive: true });
+  await mkdir(workspace, { recursive: true });
+
+  const bundles = ["A", "B"].map((payload) =>
+    filesBundle([
+      {
+        path: "SKILL.md",
+        contents:
+          "---\nname: concurrent\ndescription: Concurrent install fixture.\n---\n",
+      },
+      { path: "payload.txt", contents: payload },
+    ]),
+  );
+  const originalNow = Date.now;
+  Date.now = () => 1_700_000_000_000;
+  try {
+    const results = await Promise.allSettled(
+      bundles.map((skillBundle, index) =>
+        installBundledSkill({
+          appId: `app-${index}`,
+          skillBundle,
+          scope: "user",
+          agents: ["codex"],
+          home,
+          cwd: workspace,
+          hostsFile: defaultHostsFile,
+        }),
+      ),
+    );
+    const installed = results.flatMap((result, index) =>
+      result.status === "fulfilled" && result.value.installed.length === 1
+        ? [index]
+        : [],
+    );
+    assert.equal(installed.length, 1);
+    const winner = installed[0];
+    const target = join(home, ".agents/skills/concurrent");
+    const metadata = JSON.parse(
+      await readFile(join(target, ".kitup.json"), "utf8"),
+    );
+    assert.equal(metadata.appId, `app-${winner}`);
+    assert.equal(
+      await readFile(join(target, "payload.txt"), "utf8"),
+      ["A", "B"][winner],
+    );
+    assert.deepEqual(await readdir(join(home, ".agents/skills")), [
+      "concurrent",
+    ]);
+  } finally {
+    Date.now = originalNow;
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 async function runCase(testCase: any, home: string, workspace: string) {
   const options = expandOptions(testCase.options, home, workspace);
+  const hostsFile = caseHostsFile(testCase.options, home, workspace);
 
   if (testCase.operation === "resolve-hosts") {
     const spec = await loadHostSpec(resolveRepoPath(testCase.given.hostsFile));
@@ -154,14 +222,22 @@ async function runCase(testCase: any, home: string, workspace: string) {
     );
   }
 
-  const report =
+  const reportPromise =
     testCase.operation === "uninstall"
-      ? await uninstallBundledSkill({ ...options, hostsFile })
+      ? uninstallBundledSkill({ ...options, hostsFile })
       : testCase.operation === "plan"
-        ? await planBundledSkill({ ...options, hostsFile })
+        ? planBundledSkill({ ...options, hostsFile })
         : testCase.operation === "update"
-          ? await updateBundledSkill({ ...options, hostsFile })
-          : await installBundledSkill({ ...options, hostsFile });
+          ? updateBundledSkill({ ...options, hostsFile })
+          : installBundledSkill({ ...options, hostsFile });
+
+  if (testCase.expected.throws) {
+    await assert.rejects(reportPromise);
+    await assertExpectedFiles(testCase, home, workspace);
+    return;
+  }
+
+  const report = await reportPromise;
 
   if (testCase.expected.report)
     assert.deepEqual(

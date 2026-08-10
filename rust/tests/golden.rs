@@ -266,19 +266,19 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
             assert_expected_metadata(case, home, workspace);
         }
         _ => {
+            let base = case_base_options(options, home, workspace);
             if let Some(expected) = case.expected.get("detectedHosts") {
-                let hosts = detect_hosts(
-                    &BaseOptions {
-                        home: Some(home.to_path_buf()),
-                        cwd: Some(workspace.to_path_buf()),
-                        hosts_file: Some(repo_path("spec/hosts.json")),
-                    },
-                    Some(scope(options["scope"].as_str().unwrap())),
-                )
-                .unwrap();
+                let hosts =
+                    detect_hosts(&base, Some(scope(options["scope"].as_str().unwrap()))).unwrap();
                 assert_json_eq(&json!(host_ids(&hosts)), expected.clone());
             }
-            let report = run_report_case(case, options, home, workspace);
+            let result = run_report_case(case, options, base);
+            if case.expected.get("throws").and_then(Value::as_bool) == Some(true) {
+                assert!(result.is_err(), "expected operation to throw");
+                assert_expected_files(case, home, workspace);
+                return;
+            }
+            let report = result.unwrap();
             if let Some(expected) = case.expected.get("report") {
                 assert_json_eq(&report, expand_value(expected, home, workspace));
             }
@@ -290,29 +290,41 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
     }
 }
 
+fn case_base_options(options: &Map<String, Value>, home: &Path, workspace: &Path) -> BaseOptions {
+    let hosts_file = match options.get("hostsFile").and_then(Value::as_str) {
+        Some(path) => {
+            let expanded = expand_value(&Value::String(path.to_string()), home, workspace);
+            let expanded = expanded.as_str().unwrap();
+            if Path::new(expanded).is_absolute() {
+                PathBuf::from(expanded)
+            } else {
+                repo_path(expanded)
+            }
+        }
+        None => repo_path("spec/hosts.json"),
+    };
+    BaseOptions {
+        home: Some(home.to_path_buf()),
+        cwd: Some(workspace.to_path_buf()),
+        hosts_file: Some(hosts_file),
+    }
+}
+
 fn run_report_case(
     case: &GoldenCase,
     options: &Map<String, Value>,
-    home: &Path,
-    workspace: &Path,
-) -> Value {
-    let base = BaseOptions {
-        home: Some(home.to_path_buf()),
-        cwd: Some(workspace.to_path_buf()),
-        hosts_file: Some(repo_path("spec/hosts.json")),
-    };
+    base: BaseOptions,
+) -> Result<Value, Box<dyn std::error::Error>> {
     match case.operation.as_str() {
-        "uninstall" => serde_json::to_value(
-            uninstall_bundled_skill(&UninstallOptions {
+        "uninstall" => Ok(serde_json::to_value(uninstall_bundled_skill(
+            &UninstallOptions {
                 base,
                 app_id: options["appId"].as_str().unwrap().to_string(),
                 skill_name: options["skillName"].as_str().unwrap().to_string(),
                 scope: scope(options["scope"].as_str().unwrap()),
                 agents: agent_selector(&options["agents"]),
-            })
-            .unwrap(),
-        )
-        .unwrap(),
+            },
+        )?)?),
         "install" | "update" | "plan" => {
             let options = InstallOptions {
                 base,
@@ -326,9 +338,9 @@ fn run_report_case(
                     .unwrap_or(false),
             };
             match case.operation.as_str() {
-                "update" => serde_json::to_value(update_bundled_skill(&options).unwrap()).unwrap(),
-                "plan" => serde_json::to_value(plan_bundled_skill(&options).unwrap()).unwrap(),
-                _ => serde_json::to_value(install_bundled_skill(&options).unwrap()).unwrap(),
+                "update" => Ok(serde_json::to_value(update_bundled_skill(&options)?)?),
+                "plan" => Ok(serde_json::to_value(plan_bundled_skill(&options)?)?),
+                _ => Ok(serde_json::to_value(install_bundled_skill(&options)?)?),
             }
         }
         other => panic!("unsupported operation: {other}"),
