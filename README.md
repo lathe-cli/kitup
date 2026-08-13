@@ -234,6 +234,10 @@ For non-interactive or embedding scenarios, call `install_bundled_skill`, `plan_
 - [Host adapter contract](docs/host-adapter-contract.md)
 - [Release](docs/RELEASE.md)
 
+## License
+
+[Apache License 2.0](LICENSE)
+
 ## Acknowledgments
 
 Host adapter coverage builds on prior work from [GitHub CLI `gh skill`](https://cli.github.com/manual/gh_skill_install) and [`npx skills` / skills.sh](https://github.com/vercel-labs/skills).
