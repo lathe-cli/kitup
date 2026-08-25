@@ -24,7 +24,7 @@ smoke_npm() {
 	cd "$dir"
 	npm init -y >/dev/null
 	npm install "@kitup/sdk@$version" >/dev/null
-	node --input-type=module -e 'import { loadHostSpec } from "@kitup/sdk"; const spec = await loadHostSpec(); if (spec.hosts.length !== 72) throw new Error(`expected 72 hosts, got ${spec.hosts.length}`); console.log(`npm ok: ${spec.hosts.length}`);'
+	node --input-type=module -e 'import { loadHostSpec } from "@kitup/sdk"; const spec = await loadHostSpec(); if (spec.hosts.length !== 78) throw new Error(`expected 78 hosts, got ${spec.hosts.length}`); console.log(`npm ok: ${spec.hosts.length}`);'
 }
 
 smoke_rust() {
@@ -35,7 +35,7 @@ smoke_rust() {
 	cat > src/main.rs <<'RS'
 fn main() {
     let hosts = kitup::load_host_spec(None).expect("load host spec");
-    assert_eq!(hosts.len(), 72);
+    assert_eq!(hosts.len(), 78);
     println!("rust ok: {}", hosts.len());
 }
 RS
@@ -61,8 +61,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if len(hosts) != 72 {
-		panic(fmt.Sprintf("expected 72 hosts, got %d", len(hosts)))
+	if len(hosts) != 78 {
+		panic(fmt.Sprintf("expected 78 hosts, got %d", len(hosts)))
 	}
 	fmt.Printf("go ok: %d\n", len(hosts))
 }
@@ -104,7 +104,7 @@ smoke_python() {
 from kitup import load_host_spec
 
 spec = load_host_spec()
-assert len(spec.hosts) == 72
+assert len(spec.hosts) == 78
 print(f"python ok: {len(spec.hosts)}")
 PY
 }

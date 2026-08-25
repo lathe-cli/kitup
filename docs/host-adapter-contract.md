@@ -21,6 +21,8 @@ Uninstall removes every valid kitup-owned copy for the requested `appId` and ski
 
 `aliases` are accepted input names for one host adapter.
 
+Canonical ids use lowercase kebab-case. Aliases may also contain dots when preserving an external ecosystem identifier.
+
 Aliases are for ecosystem compatibility only. SDK result objects should return the canonical `id`, not the alias, unless the caller needs an echo of the original selector.
 
 ## Detection
@@ -28,6 +30,8 @@ Aliases are for ecosystem compatibility only. SDK result objects should return t
 `detect` is only a default selector for `agents: "auto"`.
 
 Detection checks path existence across every `detect` entry: a host is detected when any of its non-generic entries exists. Entries may be home-relative paths such as `~/.codex` or project-relative paths such as `.replit`.
+
+`detect` may be empty when no host-specific path-only evidence exists. Such hosts remain available through explicit selection. Do not add generic placeholder paths to make the array non-empty.
 
 Every `detect` entry must be evidence that this specific host is present:
 

@@ -74,6 +74,21 @@
       "status": "community"
     },
     {
+      "id": "antigravity2-0",
+      "displayName": "Antigravity 2.0",
+      "aliases": [
+        "antigravity2.0"
+      ],
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.gemini/config/skills"
+      ],
+      "detect": [],
+      "status": "documented"
+    },
+    {
       "id": "astrbot",
       "displayName": "AstrBot",
       "projectSkillsDirs": [
@@ -379,9 +394,7 @@
         "agent/skills"
       ],
       "userSkillsDirs": [],
-      "detect": [
-        "package.json"
-      ],
+      "detect": [],
       "status": "community",
       "notes": [
         "Project-only host; userSkillsDirs is intentionally empty.",
@@ -467,6 +480,20 @@
       "status": "community"
     },
     {
+      "id": "grok",
+      "displayName": "Grok Build",
+      "projectSkillsDirs": [
+        ".grok/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.grok/skills"
+      ],
+      "detect": [
+        "~/.grok"
+      ],
+      "status": "community"
+    },
+    {
       "id": "hermes-agent",
       "displayName": "Hermes Agent",
       "projectSkillsDirs": [
@@ -548,6 +575,20 @@
       ],
       "detect": [
         "~/.kilocode"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "kimchi",
+      "displayName": "Kimchi",
+      "projectSkillsDirs": [
+        ".kimchi/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/kimchi/harness/skills"
+      ],
+      "detect": [
+        "~/.config/kimchi"
       ],
       "status": "community"
     },
@@ -643,6 +684,20 @@
       ],
       "detect": [
         "~/.mcpjam"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "minimax-code",
+      "displayName": "MiniMax Code",
+      "projectSkillsDirs": [
+        ".minimax/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.minimax/skills"
+      ],
+      "detect": [
+        "~/.minimax"
       ],
       "status": "community"
     },
@@ -790,6 +845,21 @@
       ],
       "detect": [
         "~/.pochi"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "posit-assistant",
+      "displayName": "Posit Assistant",
+      "projectSkillsDirs": [
+        ".posit/assistant/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.posit/assistant/skills"
+      ],
+      "detect": [
+        "~/.posit/assistant",
+        "~/.positai"
       ],
       "status": "community"
     },
@@ -995,10 +1065,7 @@
         "~/.agents/skills",
         "~/.config/agents/skills"
       ],
-      "detect": [
-        "~/.agents",
-        "~/.config/agents"
-      ],
+      "detect": [],
       "status": "community"
     },
     {
@@ -1060,6 +1127,20 @@
       "detect": [
         "~/.config/zed",
         "~/.agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "zcode",
+      "displayName": "ZCode",
+      "projectSkillsDirs": [
+        ".zcode/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.zcode/skills"
+      ],
+      "detect": [
+        "~/.zcode"
       ],
       "status": "community"
     },
