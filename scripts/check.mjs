@@ -47,6 +47,7 @@ function validateHosts(spec, schema) {
   assert(Array.isArray(spec.hosts), "hosts must be an array");
 
   const idPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  const aliasPattern = /^[a-z0-9]+([.-][a-z0-9]+)*$/;
   const projectPattern = new RegExp(schema.$defs.projectPath.pattern);
   const homePattern = new RegExp(schema.$defs.homePath.pattern);
   for (const path of [
@@ -81,6 +82,7 @@ function validateHosts(spec, schema) {
   for (const host of spec.hosts) {
     assert(idPattern.test(host.id), `bad host id: ${host.id}`);
     assert(!ids.has(host.id), `duplicate host id: ${host.id}`);
+    assert(!aliases.has(host.id), `host id conflicts with alias: ${host.id}`);
     ids.add(host.id);
     assert(host.displayName, `missing displayName: ${host.id}`);
 
@@ -107,10 +109,7 @@ function validateHosts(spec, schema) {
       assert(homePattern.test(path), `bad user path for ${host.id}: ${path}`);
     }
 
-    assert(
-      Array.isArray(host.detect) && host.detect.length > 0,
-      `missing detect paths: ${host.id}`,
-    );
+    assert(Array.isArray(host.detect), `detect must be an array: ${host.id}`);
     const installDirs = new Set([
       ...host.projectSkillsDirs,
       ...host.userSkillsDirs,
@@ -132,7 +131,7 @@ function validateHosts(spec, schema) {
     );
 
     for (const alias of host.aliases || []) {
-      assert(idPattern.test(alias), `bad alias for ${host.id}: ${alias}`);
+      assert(aliasPattern.test(alias), `bad alias for ${host.id}: ${alias}`);
       assert(!ids.has(alias), `alias conflicts with host id: ${alias}`);
       assert(!aliases.has(alias), `duplicate alias: ${alias}`);
       aliases.add(alias);
@@ -190,6 +189,7 @@ function validateCases(cases, hosts) {
 
   for (const id of [
     "alias-resolution",
+    "antigravity-dotted-alias-resolution",
     "kimi-alias-resolution",
     "unknown-host-id",
     "parse-install-flags-defaults",

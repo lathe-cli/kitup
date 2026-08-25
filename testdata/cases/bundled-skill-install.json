@@ -13,13 +13,14 @@
         "hostsFile": "spec/hosts.json"
       },
       "expected": {
-        "count": 72,
+        "count": 78,
         "hostIds": [
           "adal",
           "aider-desk",
           "amp",
           "antigravity",
           "antigravity-cli",
+          "antigravity2-0",
           "astrbot",
           "augment",
           "autohand-code",
@@ -46,18 +47,21 @@
           "gemini-cli",
           "github-copilot",
           "goose",
+          "grok",
           "hermes-agent",
           "iflow-cli",
           "inference-sh",
           "jazz",
           "junie",
           "kilo",
+          "kimchi",
           "kimi-cli",
           "kiro-cli",
           "kode",
           "lingma",
           "loaf",
           "mcpjam",
+          "minimax-code",
           "mistral-vibe",
           "moxby",
           "mux",
@@ -68,6 +72,7 @@
           "openhands",
           "pi",
           "pochi",
+          "posit-assistant",
           "promptscript",
           "qoder",
           "qoder-cn",
@@ -85,6 +90,7 @@
           "warp",
           "windsurf",
           "zed",
+          "zcode",
           "zencoder",
           "zenflow"
         ]
@@ -105,6 +111,24 @@
       "expected": {
         "resolvedHostIds": [
           "roo"
+        ]
+      }
+    },
+    {
+      "id": "antigravity-dotted-alias-resolution",
+      "operation": "resolve-hosts",
+      "description": "Resolves the gh skill dotted Antigravity identifier to the canonical kitup adapter id.",
+      "options": {
+        "agents": [
+          "antigravity2.0"
+        ]
+      },
+      "given": {
+        "hostsFile": "spec/hosts.json"
+      },
+      "expected": {
+        "resolvedHostIds": [
+          "antigravity2-0"
         ]
       }
     },
@@ -2139,7 +2163,7 @@
       "expected": {
         "selection": {
           "action": "install",
-          "selectedCount": 72,
+          "selectedCount": 78,
           "candidateHostIds": [],
           "detectedHostIds": [],
           "needsConfirmation": false,
@@ -2357,7 +2381,7 @@
         "selection": {
           "action": "select-agents",
           "selectedHostIds": [],
-          "candidateCount": 72,
+          "candidateCount": 78,
           "detectedHostIds": [],
           "needsConfirmation": true,
           "errors": []
