@@ -13,6 +13,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = new URL("../", import.meta.url);
+const args = process.argv.slice(2);
+if (args.some((arg) => arg !== "--published-core") || args.length > 1) {
+  throw new Error(
+    "Usage: node scripts/check-go-modules.mjs [--published-core]",
+  );
+}
+const publishedCore = args.includes("--published-core");
 const scratch = mkdtempSync(join(tmpdir(), "kitup-go-modules-"));
 const core = join(scratch, "go");
 const cobra = join(scratch, "go-cobra");
@@ -21,40 +28,43 @@ const env = { ...process.env, GOWORK: "off" };
 delete env.KITUP_TEST_REPO_ROOT;
 
 try {
-  cpSync(new URL("go/", root), core, { recursive: true });
   cpSync(new URL("go-cobra/", root), cobra, { recursive: true });
 
-  if (existsSync(join(core, "testdata"))) {
-    throw new Error(
-      "standalone Go module must not contain copied repository testdata",
+  if (publishedCore) {
+    run("go", ["mod", "download", "github.com/lathe-cli/kitup/go"], cobra);
+    run("go", ["test", "-mod=readonly", "-count=1", "./..."], cobra);
+  } else {
+    cpSync(new URL("go/", root), core, { recursive: true });
+
+    if (existsSync(join(core, "testdata"))) {
+      throw new Error(
+        "standalone Go module must not contain copied repository testdata",
+      );
+    }
+
+    run("go", ["test", "-count=1", "./..."], core);
+
+    cpSync(
+      new URL("tests/go-golden/golden_test.go", root),
+      join(core, "golden_test.go"),
     );
-  }
+    run("go", ["test", "-count=1", "./..."], core, {
+      ...env,
+      KITUP_TEST_REPO_ROOT: fileURLToPath(root),
+    });
+    console.log("ok: repository Go golden parity");
 
-  run("go", ["test", "-count=1", "./..."], core);
+    run(
+      "go",
+      ["mod", "edit", "-replace=github.com/lathe-cli/kitup/go=../go"],
+      cobra,
+    );
+    run("go", ["test", "-count=1", "./..."], cobra);
 
-  cpSync(
-    new URL("tests/go-golden/golden_test.go", root),
-    join(core, "golden_test.go"),
-  );
-  run("go", ["test", "-count=1", "./..."], core, {
-    ...env,
-    KITUP_TEST_REPO_ROOT: fileURLToPath(root),
-  });
-  console.log("ok: repository Go golden parity");
-
-  run("go", ["test", "-mod=readonly", "-count=1", "./..."], cobra);
-
-  run(
-    "go",
-    ["mod", "edit", "-replace=github.com/lathe-cli/kitup/go=../go"],
-    cobra,
-  );
-  run("go", ["test", "-count=1", "./..."], cobra);
-
-  mkdirSync(consumer);
-  writeFileSync(
-    join(consumer, "go.mod"),
-    `module kitup-module-smoke
+    mkdirSync(consumer);
+    writeFileSync(
+      join(consumer, "go.mod"),
+      `module kitup-module-smoke
 
 go 1.23
 
@@ -64,10 +74,10 @@ replace github.com/lathe-cli/kitup/go-cobra => ../go-cobra
 
 replace github.com/lathe-cli/kitup/go => ../go
 `,
-  );
-  writeFileSync(
-    join(consumer, "main.go"),
-    `package main
+    );
+    writeFileSync(
+      join(consumer, "main.go"),
+      `package main
 
 import (
 	"io"
@@ -87,34 +97,39 @@ func main() {
 	})
 }
 `,
-  );
-  run("go", ["mod", "tidy"], consumer);
-  const modules = output(
-    "go",
-    [
-      "list",
-      "-m",
-      "-f",
-      "{{if .Replace}}{{.Path}}=>{{.Replace.Path}}{{end}}",
-      "all",
-    ],
-    consumer,
-  );
-  for (const expected of [
-    "github.com/lathe-cli/kitup/go=>../go",
-    "github.com/lathe-cli/kitup/go-cobra=>../go-cobra",
-  ]) {
-    if (!modules.split("\n").includes(expected)) {
-      throw new Error(`go list did not resolve ${expected}`);
+    );
+    run("go", ["mod", "tidy"], consumer);
+    const modules = output(
+      "go",
+      [
+        "list",
+        "-m",
+        "-f",
+        "{{if .Replace}}{{.Path}}=>{{.Replace.Path}}{{end}}",
+        "all",
+      ],
+      consumer,
+    );
+    for (const expected of [
+      "github.com/lathe-cli/kitup/go=>../go",
+      "github.com/lathe-cli/kitup/go-cobra=>../go-cobra",
+    ]) {
+      if (!modules.split("\n").includes(expected)) {
+        throw new Error(`go list did not resolve ${expected}`);
+      }
     }
+    run("go", ["test", "./..."], consumer);
+    run("go", ["build", "."], consumer);
   }
-  run("go", ["test", "./..."], consumer);
-  run("go", ["build", "."], consumer);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
 
-console.log("ok: standalone Go modules");
+console.log(
+  publishedCore
+    ? "ok: Go Cobra published core dependency"
+    : "ok: Go module source integration",
+);
 
 function run(command, args, cwd, commandEnv = env) {
   const result = spawnSync(command, args, {

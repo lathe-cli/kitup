@@ -3,12 +3,12 @@ flowchart TB
 
     subgraph SDK["SDK (ts / go / rust / python)"]
         direction TB
-        WORKFLOW["Install Workflow\nRunBundledSkillInstall"]:::execution
+        WORKFLOW["Install Workflow and Cobra Adapter\ninstall · status · uninstall"]:::execution
         BUNDLE["Bundle Resolver\nlocal · embedded · GitHub"]:::execution
         VALIDATE["Validator\nSKILL.md frontmatter"]:::execution
         HOST["Host Resolver\nids · aliases · detection · targets"]:::execution
-        INSTALL["Installer\nplan · conflict policy · copy · update · uninstall"]:::execution
-        REPORT["Reports\nInstallReport · UninstallReport"]:::execution
+        INSTALL["Lifecycle Core\nplan · status · copy · update · safe uninstall"]:::execution
+        REPORT["Reports\nInstallReport · StatusReport · UninstallReport"]:::execution
     end
 
     HOSTSPEC["Host Spec\nspec/hosts.json"]:::contract
@@ -21,7 +21,7 @@ flowchart TB
     TARGETS["Agent Host\nDirectory State"]:::state
     METADATA[".kitup.json"]:::state
 
-    AUTHOR -->|"provides flags"| WORKFLOW
+    AUTHOR -->|"provides flags and optional build metadata"| WORKFLOW
     WORKFLOW --> BUNDLE
     WORKFLOW --> HOST
     BUNDLE --> VALIDATE
@@ -31,7 +31,7 @@ flowchart TB
     VALIDATE --> INSTALL
     HOST --> INSTALL
     INSTALL -->|"copies, updates, removes"| TARGETS
-    INSTALL -->|"writes .kitup.json"| METADATA
+    INSTALL -->|"reads and writes .kitup.json"| METADATA
     INSTALL -->|"returns report"| REPORT
 
     SCHEMAS -.-> HOSTSPEC

@@ -3634,6 +3634,398 @@
       }
     },
     {
+      "id": "bundled-build-metadata-install",
+      "operation": "install",
+      "description": "Persists caller-supplied CLI identity and provenance for a bundled skill.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "bundleMetadata": {
+          "sourceId": "example-cli:basic",
+          "cliVersion": "1.2.3",
+          "cliRevision": "abc123",
+          "provenance": {
+            "channel": "stable",
+            "platform": "test"
+          }
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "sourceId": "example-cli:basic",
+            "cliVersion": "1.2.3",
+            "cliRevision": "abc123",
+            "provenance": {
+              "channel": "stable",
+              "platform": "test"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "bundled-build-metadata-refresh",
+      "operation": "update",
+      "description": "Refreshes explicitly supplied CLI metadata without requiring skill content changes.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "bundleMetadata": {
+          "sourceId": "example-cli:basic",
+          "cliVersion": "1.2.4",
+          "cliRevision": "def456",
+          "provenance": {
+            "channel": "stable"
+          }
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents"
+        ],
+        "files": {},
+        "copySkillBundleTo": "$HOME/.agents/skills/basic",
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "sourceId": "example-cli:basic",
+            "cliVersion": "1.2.3",
+            "cliRevision": "abc123",
+            "provenance": {
+              "channel": "stable"
+            }
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "sourceId": "example-cli:basic",
+            "cliVersion": "1.2.4",
+            "cliRevision": "def456",
+            "provenance": {
+              "channel": "stable"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "bundled-empty-build-metadata-noop",
+      "operation": "install",
+      "description": "Treats empty optional CLI metadata as absent so an unchanged install remains skipped.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "bundleMetadata": {
+          "sourceId": "",
+          "cliVersion": "",
+          "cliRevision": ""
+        },
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents"
+        ],
+        "files": {},
+        "copySkillBundleTo": "$HOME/.agents/skills/basic",
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unchanged"
+            }
+          ],
+          "conflicts": [],
+          "errors": []
+        },
+        "metadata": {
+          "path": "$HOME/.agents/skills/basic/.kitup.json",
+          "hash": "from-skill-bundle-dir",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          }
+        }
+      }
+    },
+    {
+      "id": "status-owned-skill",
+      "operation": "status",
+      "description": "Returns normalized installed metadata for a matching kitup-owned target.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "sha256:abc",
+            "sourceId": "example-cli:basic",
+            "cliVersion": "1.2.3",
+            "cliRevision": "abc123",
+            "provenance": {
+              "channel": "stable"
+            }
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "metadata": {
+                "schemaVersion": 1,
+                "appId": "example-cli",
+                "skillName": "basic",
+                "source": "bundled",
+                "hash": "sha256:abc",
+                "sourceId": "example-cli:basic",
+                "cliVersion": "1.2.3",
+                "cliRevision": "abc123",
+                "provenance": {
+                  "channel": "stable"
+                }
+              }
+            }
+          ],
+          "missing": [],
+          "conflicts": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "status-missing-skill",
+      "operation": "status",
+      "description": "Reports a missing lifecycle target as state rather than an execution error.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "missing": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "conflicts": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "status-malformed-metadata",
+      "operation": "status",
+      "description": "Fails closed when lifecycle status encounters malformed ownership metadata.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "missing": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "unmanaged"
+            }
+          ],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "status-owner-mismatch",
+      "operation": "status",
+      "description": "Reports matching skill metadata owned by another app without treating it as installed.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills/basic"
+        ],
+        "files": {
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "other-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "sha256:abc"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "missing": [],
+          "conflicts": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "owner-mismatch"
+            }
+          ],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
       "id": "initial-install-copy-failure-is-atomic",
       "operation": "install",
       "description": "Leaves no target behind when a new install fails while copying its bundle.",

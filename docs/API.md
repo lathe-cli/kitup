@@ -30,10 +30,13 @@ import {
   parseInstallFlags,
   classifyInstallWorkflowExit,
   resolveInstallSelection,
+  readInstalledMetadata,
   runBundledSkillInstall,
+  statusBundledSkill,
   uninstallBundledSkill,
   updateBundledSkill,
   validateSkillBundle,
+  withBundleMetadata,
 } from "@kitup/sdk";
 ```
 
@@ -81,6 +84,7 @@ Implemented functions:
 - `filesBundle(files)`
 - `moduleDirBundle(importMetaUrl, relativePath)`
 - `githubBundle(options)`
+- `withBundleMetadata(bundle, metadata)`
 - `parseInstallFlags(flags)`
 - `agentSelectorFromFlags(values)`
 - `parseScopeFlag(value)`
@@ -91,6 +95,8 @@ Implemented functions:
 - `planBundledSkill(options)`
 - `installBundledSkill(options)`
 - `updateBundledSkill(options)`
+- `statusBundledSkill(options)`
+- `readInstalledMetadata(targetDir)`
 - `uninstallBundledSkill(options)`
 - `installUxText`
 
@@ -140,6 +146,7 @@ Implemented functions:
 - `FSBundle(fsys, root)`
 - `FilesBundle(files)`
 - `GitHubBundle(opts)`
+- `WithBundleMetadata(bundle, meta)`
 - `ParseInstallFlags(flags)`
 - `AgentSelectorFromFlags(values)`
 - `ParseScopeFlag(value)`
@@ -150,6 +157,8 @@ Implemented functions:
 - `PlanBundledSkill(opts)`
 - `InstallBundledSkill(opts)`
 - `UpdateBundledSkill(opts)`
+- `StatusBundledSkill(opts)`
+- `ReadInstalledMetadata(targetDir)`
 - `UninstallBundledSkill(opts)`
 - `InstallUX`
 
@@ -157,6 +166,10 @@ Optional Cobra adapter module: `github.com/lathe-cli/kitup/go-cobra`
 
 - `NewSkillCommand(opts)`
 - `NewInstallCommand(opts)`
+- `NewStatusCommand(opts)`
+- `NewUninstallCommand(opts)`
+
+Set `Options.SkillName` when mounting the lifecycle commands. Both commands accept `--scope` and repeatable `--agent`; status also accepts `--json`, while uninstall accepts `--json` and `--yes`. A non-TTY uninstall without `--yes` fails before mutation. In TTY mode, uninstall renders the owned targets and confirms before calling the core API. JSON output keeps prompts off stdout.
 
 ## Rust
 
@@ -217,6 +230,7 @@ Implemented functions:
 - `files_bundle(files)`
 - `include_dir_bundle(dir)` with the `include-dir` feature
 - `github_bundle(options)`
+- `with_bundle_metadata(bundle, metadata)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`
 - `parse_scope_flag(value, errors)`
@@ -228,6 +242,8 @@ Implemented functions:
 - `plan_bundled_skill(options)`
 - `install_bundled_skill(options)`
 - `update_bundled_skill(options)`
+- `status_bundled_skill(options)`
+- `read_installed_metadata(target_dir)`
 - `uninstall_bundled_skill(options)`
 - `INSTALL_UX`
 
@@ -257,10 +273,13 @@ from kitup import (
     resolve_install_selection,
     resolve_install_targets,
     resources_bundle,
+    read_installed_metadata,
     run_bundled_skill_install,
+    status_bundled_skill,
     uninstall_bundled_skill,
     update_bundled_skill,
     validate_skill_bundle,
+    with_bundle_metadata,
 )
 ```
 
@@ -326,6 +345,7 @@ Implemented functions:
 - `files_bundle(files)`
 - `resources_bundle(root)`
 - `github_bundle(options)`
+- `with_bundle_metadata(bundle, metadata)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`
 - `parse_scope_flag(value, errors)`
@@ -337,6 +357,8 @@ Implemented functions:
 - `plan_bundled_skill(options)`
 - `install_bundled_skill(options)`
 - `update_bundled_skill(options)`
+- `status_bundled_skill(options)`
+- `read_installed_metadata(target_dir)`
 - `uninstall_bundled_skill(options)`
 - `INSTALL_UX`
 
@@ -360,6 +382,23 @@ The first non-local bundle constructor is GitHub only:
 - Rust: `github_bundle(GitHubBundleOptions { owner, repo, path, ref_name })`
 
 GitHub bundle resolution downloads only files under the configured directory path, requires `SKILL.md` at that bundle root, records the requested ref and resolved commit, and writes GitHub provenance into `.kitup.json`. It does not search GitHub, install dependencies, execute scripts, handle private auth, or install whole repositories by default.
+
+## Installed metadata and lifecycle status
+
+Bundled and embedded inputs can attach optional build identity without changing the skill content hash:
+
+- `sourceId` / `SourceID` / `source_id`: stable caller-defined bundle identity
+- `cliVersion` / `CLIVersion` / `cli_version`: embedding CLI release version
+- `cliRevision` / `CLIRevision` / `cli_revision`: embedding CLI source or build revision
+- `provenance`: string-to-string build provenance
+
+Use `withBundleMetadata` / `WithBundleMetadata` / `with_bundle_metadata` with the language's `BundledSkillMetadata` type. Explicit metadata changes refresh `.kitup.json` even when skill bytes are unchanged. The existing schema stays at `schemaVersion: 1`; all new fields are optional, so metadata written by older kitup versions remains readable. The existing `version` field remains the source version or GitHub ref and is not overloaded with the embedding CLI version.
+
+`InstalledMetadata` is the normalized public type returned by the reader API and included in each installed status entry. A missing target returns no metadata. An existing directory with missing or malformed ownership metadata returns an error from the reader and an `unmanaged` conflict from status.
+
+Status is local and offline. `StatusReport` contains `installed`, `missing`, `conflicts`, and `errors`, using the same host selection and compatible-path rules as install and uninstall. It does not resolve or fetch a GitHub bundle.
+
+Core uninstall revalidates `appId` and `skillName` after atomically moving the target to a same-parent quarantine path. A changed, malformed, or mismatched target is restored and reported as a conflict instead of being deleted. There is no implicit uninstall force mode.
 
 The embedding CLI owns command names and framework attachment. `kitup` owns standard install flag semantics, selector mapping, user-facing workflow text, summary rendering, confirmation, dry-run planning, workflow exit classification, and execution. For user-facing commands, call `runBundledSkillInstall` / `RunBundledSkillInstall` / `run_bundled_skill_install` with values from the shared flag parsing helpers.
 

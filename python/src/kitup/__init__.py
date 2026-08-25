@@ -5,12 +5,15 @@ from .bundle import (
     github_bundle,
     resources_bundle,
     validate_skill_bundle,
+    with_bundle_metadata,
 )
 from .hosts import detect_hosts, load_host_spec, resolve_hosts
 from .install import (
     install_bundled_skill,
     plan_bundled_skill,
     resolve_install_targets,
+    read_installed_metadata,
+    status_bundled_skill,
     uninstall_bundled_skill,
     update_bundled_skill,
 )
@@ -27,6 +30,7 @@ from .workflow import (
 )
 from .types import (
     BaseOptions,
+    BundledSkillMetadata,
     GitHubBundleOptions,
     Host,
     HostSpec,
@@ -38,9 +42,13 @@ from .types import (
     InstallWorkflowExit,
     InstallWorkflowOptions,
     InstallWorkflowReport,
+    InstalledMetadata,
+    InstalledTarget,
     KitupError,
     ParsedInstallFlags,
     SkillFile,
+    StatusOptions,
+    StatusReport,
     TargetError,
     TargetGroup,
     TargetResult,
@@ -51,6 +59,7 @@ from .types import (
 
 __all__ = [
     "BaseOptions",
+    "BundledSkillMetadata",
     "GitHubBundleOptions",
     "Host",
     "HostSpec",
@@ -62,9 +71,13 @@ __all__ = [
     "InstallWorkflowExit",
     "InstallWorkflowOptions",
     "InstallWorkflowReport",
+    "InstalledMetadata",
+    "InstalledTarget",
     "KitupError",
     "ParsedInstallFlags",
     "SkillFile",
+    "StatusOptions",
+    "StatusReport",
     "TargetError",
     "TargetGroup",
     "TargetResult",
@@ -77,6 +90,7 @@ __all__ = [
     "files_bundle",
     "github_bundle",
     "resources_bundle",
+    "with_bundle_metadata",
     "agent_selector_from_flags",
     "classify_install_workflow_exit",
     "install_bundled_skill",
@@ -89,6 +103,8 @@ __all__ = [
     "resolve_hosts",
     "resolve_install_selection",
     "resolve_install_targets",
+    "read_installed_metadata",
+    "status_bundled_skill",
     "run_bundled_skill_install",
     "run_bundled_skill_install_with_io",
     "uninstall_bundled_skill",

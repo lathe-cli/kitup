@@ -28,8 +28,9 @@ mycli skill install
 - validate bundled skills
 - install from a local directory, embedded bundle tree, or public GitHub bundle directory
 - copy, update, and uninstall kitup-owned installs
+- inspect installed ownership and CLI build metadata without parsing files directly
 - refuse unsafe overwrite conflicts
-- return structured install reports
+- return structured install, status, and uninstall reports
 
 ## What it is not
 
@@ -91,6 +92,8 @@ const githubSkillBundle = githubBundle({
 });
 ```
 
+Attach CLI build identity to a bundled or embedded skill with `withBundleMetadata`. The SDK records it in the backward-compatible `.kitup.json` document and exposes it through `readInstalledMetadata` and `statusBundledSkill`.
+
 ### Go
 
 Install:
@@ -143,10 +146,13 @@ import (
 )
 
 root.AddCommand(kitupcobra.NewSkillCommand(kitupcobra.Options{
-	AppID:  "mycli",
-	Bundle: kitup.FSBundle(embeddedSkills, "skills/mycli"),
+	AppID:     "mycli",
+	SkillName: "mycli",
+	Bundle:    kitup.FSBundle(embeddedSkills, "skills/mycli"),
 }))
 ```
+
+The adapter mounts `skill install`, `skill status`, and `skill uninstall`. Status and uninstall accept `--json`; non-interactive uninstall requires `--yes`, while interactive uninstall confirms before removing any target.
 
 ### Rust
 
@@ -225,7 +231,7 @@ from kitup import resources_bundle
 bundle = resources_bundle(files("mycli.skills") / "mycli")
 ```
 
-For non-interactive or embedding scenarios, call `install_bundled_skill`, `plan_bundled_skill`, `update_bundled_skill`, or `uninstall_bundled_skill` directly.
+For non-interactive or embedding scenarios, call `install_bundled_skill`, `plan_bundled_skill`, `update_bundled_skill`, `status_bundled_skill`, `read_installed_metadata`, or `uninstall_bundled_skill` directly.
 
 ## Docs
 

@@ -122,6 +122,15 @@ pub struct UninstallOptions {
     pub agents: AgentSelector,
 }
 
+#[derive(Clone, Debug)]
+pub struct StatusOptions {
+    pub base: BaseOptions,
+    pub app_id: String,
+    pub skill_name: String,
+    pub scope: Scope,
+    pub agents: AgentSelector,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct InstallSelectionOptions {
     pub base: BaseOptions,
@@ -184,6 +193,15 @@ pub enum SkillBundle {
     Directory(PathBuf),
     Files(Vec<SkillFile>),
     GitHub(GitHubBundleOptions),
+    Metadata(Box<SkillBundle>, BundledSkillMetadata),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BundledSkillMetadata {
+    pub source_id: Option<String>,
+    pub cli_version: Option<String>,
+    pub cli_revision: Option<String>,
+    pub provenance: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +248,10 @@ pub fn include_dir_bundle(dir: &include_dir::Dir<'_>) -> SkillBundle {
 
 pub fn github_bundle(options: GitHubBundleOptions) -> SkillBundle {
     SkillBundle::GitHub(options)
+}
+
+pub fn with_bundle_metadata(bundle: SkillBundle, metadata: BundledSkillMetadata) -> SkillBundle {
+    SkillBundle::Metadata(Box::new(bundle), metadata)
 }
 
 #[derive(Clone, Debug)]
@@ -295,6 +317,43 @@ pub struct UninstallReport {
     pub errors: Vec<ReportError>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledMetadata {
+    pub schema_version: u32,
+    pub app_id: String,
+    pub skill_name: String,
+    pub source: String,
+    pub hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provenance: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledTarget {
+    #[serde(flatten)]
+    pub target: TargetResult,
+    pub metadata: InstalledMetadata,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusReport {
+    pub installed: Vec<InstalledTarget>,
+    pub missing: Vec<TargetResult>,
+    pub conflicts: Vec<TargetStatus>,
+    pub errors: Vec<ReportError>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallSelection {
@@ -325,17 +384,7 @@ pub struct InstallWorkflowExit {
     pub message: String,
 }
 
-#[derive(Deserialize)]
-struct Metadata {
-    #[serde(rename = "schemaVersion")]
-    schema_version: u32,
-    #[serde(rename = "appId")]
-    app_id: String,
-    #[serde(rename = "skillName")]
-    skill_name: String,
-    source: String,
-    hash: String,
-}
+type Metadata = InstalledMetadata;
 
 #[derive(Clone, Debug)]
 struct BundleFile {
@@ -355,7 +404,10 @@ struct BundleMetadata {
     source: String,
     source_id: Option<String>,
     version: Option<String>,
+    cli_version: Option<String>,
+    cli_revision: Option<String>,
     provenance: BTreeMap<String, String>,
+    explicit: bool,
 }
 
 pub fn parse_install_flags(flags: InstallFlagValues) -> ParsedInstallFlags {
@@ -1043,12 +1095,60 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Uninsta
                 report.conflicts.push(with_reason(result, "owner-mismatch"))
             }
             MetadataState::Managed(_) => {
-                fs::remove_dir_all(&target.target_dir)?;
+                if let Some(reason) =
+                    remove_managed_skill(&target.target_dir, &options.app_id, &options.skill_name)?
+                {
+                    report.conflicts.push(with_reason(result, &reason));
+                    continue;
+                }
                 report.removed.push(result);
             }
         }
     }
     Ok(report)
+}
+
+pub fn status_bundled_skill(options: &StatusOptions) -> io::Result<StatusReport> {
+    if options.app_id.is_empty() {
+        return Ok(status_report(vec![json!({ "reason": "invalid-app-id" })]));
+    }
+    let (targets, errors, _) = resolve_install_targets_for_lifecycle(
+        &options.base,
+        &options.agents,
+        options.scope,
+        &options.skill_name,
+        Some(&options.app_id),
+    )?;
+    let mut report = status_report(errors);
+    for target in targets {
+        let result = target_result(&target);
+        match read_metadata(&target.target_dir) {
+            MetadataState::Missing => report.missing.push(result),
+            MetadataState::Unmanaged => report.conflicts.push(with_reason(result, "unmanaged")),
+            MetadataState::Managed(meta) if meta.skill_name != options.skill_name => {
+                report.conflicts.push(with_reason(result, "unmanaged"))
+            }
+            MetadataState::Managed(meta) if meta.app_id != options.app_id => {
+                report.conflicts.push(with_reason(result, "owner-mismatch"))
+            }
+            MetadataState::Managed(metadata) => report.installed.push(InstalledTarget {
+                target: result,
+                metadata: *metadata,
+            }),
+        }
+    }
+    Ok(report)
+}
+
+pub fn read_installed_metadata(target_dir: &Path) -> io::Result<Option<InstalledMetadata>> {
+    match read_metadata(target_dir) {
+        MetadataState::Missing => Ok(None),
+        MetadataState::Unmanaged => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unmanaged install metadata",
+        )),
+        MetadataState::Managed(metadata) => Ok(Some(*metadata)),
+    }
 }
 
 fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallReport> {
@@ -1060,7 +1160,7 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
     let (bundle, bundle_metadata) = match resolve_skill_bundle(&options.skill_bundle) {
         Ok(value) => value,
         Err(_) => {
-            let reason = if matches!(options.skill_bundle, SkillBundle::GitHub(_)) {
+            let reason = if is_github_bundle(&options.skill_bundle) {
                 "bundle-resolve-failed"
             } else {
                 "invalid-skill-bundle"
@@ -1149,7 +1249,16 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                 }
             }
             MetadataState::Managed(meta) if meta.hash == hash => {
-                if repair_skill_bundle_modes(&bundle, &target.target_dir, write)? {
+                let repaired = repair_skill_bundle_modes(&bundle, &target.target_dir, write)?;
+                let metadata_changed = bundle_metadata.explicit
+                    && *meta
+                        != installed_metadata(
+                            &options.app_id,
+                            &skill_name,
+                            &hash,
+                            &bundle_metadata,
+                        );
+                if repaired || metadata_changed {
                     if write {
                         write_metadata(
                             &target.target_dir,
@@ -1185,7 +1294,7 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
 enum MetadataState {
     Missing,
     Unmanaged,
-    Managed(Metadata),
+    Managed(Box<Metadata>),
 }
 
 fn copy_managed_skill(
@@ -1272,6 +1381,39 @@ fn make_staging_dir(target_dir: &Path) -> io::Result<PathBuf> {
     }
 }
 
+fn remove_managed_skill(
+    target_dir: &Path,
+    app_id: &str,
+    skill_name: &str,
+) -> io::Result<Option<String>> {
+    let quarantine = make_staging_dir(target_dir)?;
+    fs::remove_dir(&quarantine)?;
+    fs::rename(target_dir, &quarantine)?;
+    let reason = match read_metadata(&quarantine) {
+        MetadataState::Managed(metadata)
+            if metadata.skill_name == skill_name && metadata.app_id == app_id =>
+        {
+            None
+        }
+        MetadataState::Managed(metadata) if metadata.skill_name == skill_name => {
+            Some("owner-mismatch".to_string())
+        }
+        _ => Some("unmanaged".to_string()),
+    };
+    if let Some(reason) = reason {
+        if target_dir.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("cannot restore changed install: {}", target_dir.display()),
+            ));
+        }
+        fs::rename(&quarantine, target_dir)?;
+        return Ok(Some(reason));
+    }
+    fs::remove_dir_all(quarantine)?;
+    Ok(None)
+}
+
 fn copy_skill_bundle(bundle: &NormalizedSkillBundle, dest: &Path) -> io::Result<()> {
     fs::create_dir_all(dest)?;
     for file in &bundle.files {
@@ -1319,26 +1461,31 @@ fn write_metadata(
     hash: &str,
     bundle_metadata: &BundleMetadata,
 ) -> io::Result<()> {
-    let mut value = json!({
-        "schemaVersion": 1,
-        "appId": app_id,
-        "skillName": skill_name,
-        "source": bundle_metadata.source,
-        "hash": hash
-    });
-    if let Some(source_id) = &bundle_metadata.source_id {
-        value["sourceId"] = json!(source_id);
-    }
-    if let Some(version) = &bundle_metadata.version {
-        value["version"] = json!(version);
-    }
-    if !bundle_metadata.provenance.is_empty() {
-        value["provenance"] = json!(bundle_metadata.provenance);
-    }
+    let value = installed_metadata(app_id, skill_name, hash, bundle_metadata);
     let data = serde_json::to_vec_pretty(&value)?;
     let mut data = data;
     data.push(b'\n');
     fs::write(target_dir.join(".kitup.json"), data)
+}
+
+fn installed_metadata(
+    app_id: &str,
+    skill_name: &str,
+    hash: &str,
+    bundle_metadata: &BundleMetadata,
+) -> InstalledMetadata {
+    InstalledMetadata {
+        schema_version: 1,
+        app_id: app_id.to_string(),
+        skill_name: skill_name.to_string(),
+        source: bundle_metadata.source.clone(),
+        hash: hash.to_string(),
+        source_id: bundle_metadata.source_id.clone(),
+        version: bundle_metadata.version.clone(),
+        cli_version: bundle_metadata.cli_version.clone(),
+        cli_revision: bundle_metadata.cli_revision.clone(),
+        provenance: bundle_metadata.provenance.clone(),
+    }
 }
 
 fn read_metadata(target_dir: &Path) -> MetadataState {
@@ -1349,7 +1496,21 @@ fn read_metadata(target_dir: &Path) -> MetadataState {
         return MetadataState::Unmanaged;
     };
     match serde_json::from_slice::<Metadata>(&data) {
-        Ok(meta) if is_owned_metadata(&meta) => MetadataState::Managed(meta),
+        Ok(mut meta) if is_owned_metadata(&meta) => {
+            if meta.source_id.as_deref() == Some("") {
+                meta.source_id = None;
+            }
+            if meta.version.as_deref() == Some("") {
+                meta.version = None;
+            }
+            if meta.cli_version.as_deref() == Some("") {
+                meta.cli_version = None;
+            }
+            if meta.cli_revision.as_deref() == Some("") {
+                meta.cli_revision = None;
+            }
+            MetadataState::Managed(Box::new(meta))
+        }
         _ => MetadataState::Unmanaged,
     }
 }
@@ -1591,6 +1752,15 @@ fn uninstall_report(errors: Vec<Value>) -> UninstallReport {
     }
 }
 
+fn status_report(errors: Vec<Value>) -> StatusReport {
+    StatusReport {
+        installed: vec![],
+        missing: vec![],
+        conflicts: vec![],
+        errors: report_errors(errors),
+    }
+}
+
 fn report_errors(errors: Vec<Value>) -> Vec<ReportError> {
     errors
         .into_iter()
@@ -1737,13 +1907,35 @@ fn resolve_skill_bundle(
 ) -> io::Result<(NormalizedSkillBundle, BundleMetadata)> {
     match bundle {
         SkillBundle::GitHub(options) => resolve_github_bundle(options),
+        SkillBundle::Metadata(bundle, supplied) => {
+            let (bundle, mut metadata) = resolve_skill_bundle(bundle)?;
+            if let Some(source_id) = supplied.source_id.as_ref().filter(|value| !value.is_empty()) {
+                metadata.source_id = Some(source_id.clone());
+            }
+            metadata.cli_version = supplied
+                .cli_version
+                .as_ref()
+                .filter(|value| !value.is_empty())
+                .cloned();
+            metadata.cli_revision = supplied
+                .cli_revision
+                .as_ref()
+                .filter(|value| !value.is_empty())
+                .cloned();
+            metadata.provenance.extend(supplied.provenance.clone());
+            metadata.explicit = true;
+            Ok((bundle, metadata))
+        }
         _ => Ok((
             read_skill_bundle(bundle)?,
             BundleMetadata {
                 source: "bundled".to_string(),
                 source_id: None,
                 version: None,
+                cli_version: None,
+                cli_revision: None,
                 provenance: BTreeMap::new(),
+                explicit: false,
             },
         )),
     }
@@ -1840,7 +2032,10 @@ fn resolve_github_bundle(
                 options.owner, options.repo, root
             )),
             version: Some(options.ref_name.clone()),
+            cli_version: None,
+            cli_revision: None,
             provenance,
+            explicit: false,
         },
     ))
 }
@@ -1906,6 +2101,15 @@ fn read_skill_bundle(bundle: &SkillBundle) -> io::Result<NormalizedSkillBundle> 
             let (bundle, _) = resolve_github_bundle(options)?;
             Ok(bundle)
         }
+        SkillBundle::Metadata(bundle, _) => read_skill_bundle(bundle),
+    }
+}
+
+fn is_github_bundle(bundle: &SkillBundle) -> bool {
+    match bundle {
+        SkillBundle::GitHub(_) => true,
+        SkillBundle::Metadata(bundle, _) => is_github_bundle(bundle),
+        _ => false,
     }
 }
 

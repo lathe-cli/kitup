@@ -251,6 +251,13 @@ function validateCases(cases, hosts) {
     "github-bundle-dry-run",
     "github-bundle-resolve-failure",
     "github-bundle-unchanged",
+    "bundled-build-metadata-install",
+    "bundled-build-metadata-refresh",
+    "bundled-empty-build-metadata-noop",
+    "status-owned-skill",
+    "status-missing-skill",
+    "status-malformed-metadata",
+    "status-owner-mismatch",
   ]) {
     assert(caseIds.has(id), `missing golden case: ${id}`);
   }
@@ -354,6 +361,26 @@ function validateReleaseWorkflow() {
   assert(
     !workflow.includes("https://pypi.org/pypi/kitup/"),
     "release workflow still checks the old PyPI package name",
+  );
+  const coreTag = workflow.indexOf('go_tag="go/v${version}"');
+  const publishedCoreCheck = workflow.indexOf(
+    "node scripts/check-go-modules.mjs --published-core",
+  );
+  const cobraTag = workflow.indexOf('go_tag="go-cobra/v${version}"');
+  const registryPublishes = [
+    "- name: Publish npm package",
+    "- name: Publish crate",
+    "- name: Publish Python package",
+  ].map((step) => workflow.indexOf(step));
+  assert(
+    coreTag >= 0 &&
+      publishedCoreCheck > coreTag &&
+      cobraTag > publishedCoreCheck,
+    "release workflow must publish core before verifying and tagging Go Cobra",
+  );
+  assert(
+    registryPublishes.every((step) => step > cobraTag),
+    "release workflow must verify Go modules before registry publication",
   );
   const smoke = readText("scripts/smoke-release.sh");
   assert(

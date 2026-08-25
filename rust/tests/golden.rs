@@ -2,10 +2,11 @@ use kitup::{
     classify_install_workflow_exit, compute_bundle_content_hash, detect_hosts, directory_bundle,
     files_bundle, github_bundle, install_bundled_skill, load_host_spec, parse_install_flags,
     plan_bundled_skill, resolve_hosts, resolve_install_selection, resolve_install_targets,
-    run_bundled_skill_install_with_io, uninstall_bundled_skill, update_bundled_skill,
-    validate_skill_bundle, AgentSelector, BaseOptions, GitHubBundleOptions, InstallFlagValues,
-    InstallOptions, InstallSelectionOptions, InstallWorkflowOptions, ParsedInstallFlags, Scope,
-    SkillBundle, SkillFile, UninstallOptions,
+    run_bundled_skill_install_with_io, status_bundled_skill, uninstall_bundled_skill,
+    update_bundled_skill, validate_skill_bundle, with_bundle_metadata, AgentSelector, BaseOptions,
+    BundledSkillMetadata, GitHubBundleOptions, InstallFlagValues, InstallOptions,
+    InstallSelectionOptions, InstallWorkflowOptions, ParsedInstallFlags, Scope, SkillBundle,
+    SkillFile, StatusOptions, UninstallOptions,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -342,6 +343,15 @@ fn run_report_case(
     base: BaseOptions,
 ) -> Result<Value, Box<dyn std::error::Error>> {
     match case.operation.as_str() {
+        "status" => Ok(serde_json::to_value(status_bundled_skill(
+            &StatusOptions {
+                base,
+                app_id: options["appId"].as_str().unwrap().to_string(),
+                skill_name: options["skillName"].as_str().unwrap().to_string(),
+                scope: scope(options["scope"].as_str().unwrap()),
+                agents: agent_selector(&options["agents"]),
+            },
+        )?)?),
         "uninstall" => Ok(serde_json::to_value(uninstall_bundled_skill(
             &UninstallOptions {
                 base,
@@ -645,21 +655,47 @@ fn agent_selector(value: &Value) -> AgentSelector {
 }
 
 fn skill_bundle_from_options(options: &Map<String, Value>) -> SkillBundle {
-    if let Some(files) = options.get("skillFiles").and_then(Value::as_array) {
-        return files_bundle(skill_files(files));
-    }
-    if let Some(dir) = options.get("skillBundleDir").and_then(Value::as_str) {
-        return directory_bundle(repo_path(dir));
-    }
-    if let Some(bundle) = options.get("githubBundle").and_then(Value::as_object) {
-        return github_bundle(GitHubBundleOptions {
+    let bundle = if let Some(files) = options.get("skillFiles").and_then(Value::as_array) {
+        files_bundle(skill_files(files))
+    } else if let Some(dir) = options.get("skillBundleDir").and_then(Value::as_str) {
+        directory_bundle(repo_path(dir))
+    } else if let Some(bundle) = options.get("githubBundle").and_then(Value::as_object) {
+        github_bundle(GitHubBundleOptions {
             owner: bundle["owner"].as_str().unwrap().to_string(),
             repo: bundle["repo"].as_str().unwrap().to_string(),
             path: bundle["path"].as_str().unwrap().to_string(),
             ref_name: bundle["ref"].as_str().unwrap().to_string(),
-        });
-    }
-    files_bundle(Vec::new())
+        })
+    } else {
+        files_bundle(Vec::new())
+    };
+    let Some(metadata) = options.get("bundleMetadata").and_then(Value::as_object) else {
+        return bundle;
+    };
+    with_bundle_metadata(
+        bundle,
+        BundledSkillMetadata {
+            source_id: metadata
+                .get("sourceId")
+                .and_then(Value::as_str)
+                .map(String::from),
+            cli_version: metadata
+                .get("cliVersion")
+                .and_then(Value::as_str)
+                .map(String::from),
+            cli_revision: metadata
+                .get("cliRevision")
+                .and_then(Value::as_str)
+                .map(String::from),
+            provenance: metadata
+                .get("provenance")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_string()))
+                .collect(),
+        },
+    )
 }
 
 fn skill_files(values: &[Value]) -> Vec<SkillFile> {

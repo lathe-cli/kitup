@@ -47,6 +47,7 @@
             "parse-install-flags",
             "plan",
             "run-install-workflow",
+            "status",
             "resolve-install-selection",
             "resolve-install-targets",
             "resolve-hosts",

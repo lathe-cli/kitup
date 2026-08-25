@@ -20,7 +20,9 @@ def write_install_metadata(
     source: str,
     source_id: str | None = None,
     version: str | None = None,
-    provenance: dict[str, object] | None = None,
+    cli_version: str | None = None,
+    cli_revision: str | None = None,
+    provenance: dict[str, str] | None = None,
 ) -> None:
     payload = {
         "schemaVersion": 1,
@@ -33,6 +35,10 @@ def write_install_metadata(
         payload["sourceId"] = source_id
     if version is not None:
         payload["version"] = version
+    if cli_version is not None:
+        payload["cliVersion"] = cli_version
+    if cli_revision is not None:
+        payload["cliRevision"] = cli_revision
     if provenance is not None:
         payload["provenance"] = provenance
     (target_dir / ".kitup.json").write_text(
@@ -63,7 +69,7 @@ def is_owned_metadata(payload: dict[str, object]) -> bool:
     skill_name = payload.get("skillName")
     source = payload.get("source")
     digest = payload.get("hash")
-    return (
+    required_valid = (
         isinstance(app_id, str)
         and bool(app_id)
         and isinstance(skill_name, str)
@@ -71,4 +77,17 @@ def is_owned_metadata(payload: dict[str, object]) -> bool:
         and source in ("bundled", "github")
         and isinstance(digest, str)
         and bool(digest)
+    )
+    if not required_valid:
+        return False
+    for key in ("sourceId", "version", "cliVersion", "cliRevision"):
+        if key in payload and not isinstance(payload[key], str):
+            return False
+    provenance = payload.get("provenance")
+    return provenance is None or (
+        isinstance(provenance, dict)
+        and all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in provenance.items()
+        )
     )

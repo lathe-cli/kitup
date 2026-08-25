@@ -29,9 +29,11 @@ import {
   resolveInstallTargets,
   resolveHosts,
   runBundledSkillInstall,
+  statusBundledSkill,
   uninstallBundledSkill,
   updateBundledSkill,
   validateSkillBundle,
+  withBundleMetadata,
 } from "../dist/index.js";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
@@ -240,13 +242,15 @@ async function runCase(testCase: any, home: string, workspace: string) {
   }
 
   const reportPromise =
-    testCase.operation === "uninstall"
-      ? uninstallBundledSkill({ ...options, hostsFile })
-      : testCase.operation === "plan"
-        ? planBundledSkill({ ...options, hostsFile })
-        : testCase.operation === "update"
-          ? updateBundledSkill({ ...options, hostsFile })
-          : installBundledSkill({ ...options, hostsFile });
+    testCase.operation === "status"
+      ? statusBundledSkill({ ...options, hostsFile })
+      : testCase.operation === "uninstall"
+        ? uninstallBundledSkill({ ...options, hostsFile })
+        : testCase.operation === "plan"
+          ? planBundledSkill({ ...options, hostsFile })
+          : testCase.operation === "update"
+            ? updateBundledSkill({ ...options, hostsFile })
+            : installBundledSkill({ ...options, hostsFile });
 
   if (testCase.expected.throws) {
     await assert.rejects(reportPromise);
@@ -492,6 +496,11 @@ function expandOptions(options: any, home: string, workspace: string) {
     expanded.skillBundle = filesBundle(expanded.skillFiles);
   if (expanded.githubBundle)
     expanded.skillBundle = githubBundle(expanded.githubBundle);
+  if (expanded.bundleMetadata)
+    expanded.skillBundle = withBundleMetadata(
+      expanded.skillBundle,
+      expanded.bundleMetadata,
+    );
   return expanded;
 }
 
