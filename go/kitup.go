@@ -1106,9 +1106,29 @@ func readMetadata(targetDir string) (metadata, bool, bool) {
 	if err != nil {
 		return metadata{}, true, false
 	}
-	var meta metadata
-	if err := json.Unmarshal(data, &meta); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return metadata{}, true, false
+	}
+	var meta metadata
+	fields := map[string]any{
+		"schemaVersion": &meta.SchemaVersion,
+		"appId":         &meta.AppID,
+		"skillName":     &meta.SkillName,
+		"source":        &meta.Source,
+		"hash":          &meta.Hash,
+		"sourceId":      &meta.SourceID,
+		"version":       &meta.Version,
+		"provenance":    &meta.Provenance,
+	}
+	for name, destination := range fields {
+		value, ok := raw[name]
+		if !ok {
+			continue
+		}
+		if err := json.Unmarshal(value, destination); err != nil {
+			return metadata{}, true, false
+		}
 	}
 	if !isOwnedMetadata(meta) {
 		return metadata{}, true, false
