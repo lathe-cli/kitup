@@ -20,7 +20,7 @@ GO_FILES := $(shell find $(GO_DIR) $(GO_COBRA_DIR) $(EXAMPLE_GO_DIR) -name '*.go
 
 # ── Quality ──────────────────────────────────────────────────────────────────
 
-.PHONY: check test test-ts test-go test-go-cobra test-rust test-python fmt fmt-ts fmt-go fmt-rust fmt-python
+.PHONY: check test test-ts test-go test-go-cobra test-go-release test-rust test-python fmt fmt-ts fmt-go fmt-rust fmt-python
 
 check: ## Full parity gate
 	node scripts/check.mjs
@@ -31,10 +31,13 @@ test-ts: ## Run TypeScript tests
 	pnpm --dir $(TS_DIR) test
 
 test-go: ## Run Go SDK tests
-	cd $(GO_DIR) && go test ./...
+	cd $(GO_DIR) && GOWORK=off go test ./...
 
 test-go-cobra: ## Run Go Cobra adapter tests
-	cd $(GO_COBRA_DIR) && go test ./...
+	sh scripts/check-go-cobra.sh
+
+test-go-release: ## Verify packaged Go modules from an external consumer
+	sh scripts/check-go-release.sh
 
 test-rust: ## Run Rust SDK tests
 	cargo test --manifest-path $(RUST_DIR)/Cargo.toml
@@ -62,11 +65,13 @@ fmt-python: ## Lint and format Python code
 
 .PHONY: generate generate-check
 
-generate: ## Refresh generated host constants
+generate: ## Refresh generated host constants and Go test fixtures
 	node scripts/sync-hosts.mjs
+	node scripts/sync-go-testdata.mjs
 
-generate-check: ## Verify generated host constants
+generate-check: ## Verify generated host constants and Go test fixtures
 	node scripts/sync-hosts.mjs --check
+	node scripts/sync-go-testdata.mjs --check
 
 # ── Examples ─────────────────────────────────────────────────────────────────
 

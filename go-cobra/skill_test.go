@@ -6,16 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	kitup "github.com/lathe-cli/kitup/go"
 )
+
+func testBundle() kitup.SkillBundle {
+	return kitup.FSBundle(fstest.MapFS{
+		"basic/SKILL.md": {
+			Data: []byte("---\nname: basic\ndescription: Basic skill.\n---\n"),
+		},
+	}, "basic")
+}
 
 func TestSkillCommandInstallsWithCoreFlags(t *testing.T) {
 	home := t.TempDir()
 	var out bytes.Buffer
 	cmd := NewSkillCommand(Options{
 		AppID:  "example-cli",
-		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle: testBundle(),
 		Home:   home,
 		Out:    &out,
 	})
@@ -36,7 +45,7 @@ func TestInstallCommandPromptsForScopeBeforeInstall(t *testing.T) {
 	var out bytes.Buffer
 	cmd := NewSkillCommand(Options{
 		AppID:    "example-cli",
-		Bundle:   kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle:   testBundle(),
 		Home:     home,
 		CWD:      workspace,
 		StdinTTY: true,
@@ -71,7 +80,7 @@ func TestInstallCommandForceOverwritesUnmanaged(t *testing.T) {
 	var out bytes.Buffer
 	cmd := NewSkillCommand(Options{
 		AppID:  "example-cli",
-		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle: testBundle(),
 		Home:   home,
 		Out:    &out,
 	})
@@ -89,7 +98,7 @@ func TestInstallCommandForceOverwritesUnmanaged(t *testing.T) {
 func TestInstallCommandReturnsCoreFlagError(t *testing.T) {
 	cmd := NewInstallCommand(Options{
 		AppID:  "example-cli",
-		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle: testBundle(),
 		Home:   t.TempDir(),
 	})
 	cmd.SetArgs([]string{"--scope", "bad"})

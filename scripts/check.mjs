@@ -332,6 +332,13 @@ for (const [group, name, command, args, cwd, env] of [
     rootPath,
   ],
   [
+    "source",
+    "go-test-fixtures",
+    "node",
+    ["scripts/sync-go-testdata.mjs", "--check"],
+    rootPath,
+  ],
+  [
     "typescript",
     "typescript-format",
     "pnpm",
@@ -356,14 +363,10 @@ for (const [group, name, command, args, cwd, env] of [
     "go",
     ["test", "-count=1", "./..."],
     new URL("../go/", import.meta.url),
+    { GOWORK: "off" },
   ],
-  [
-    "go",
-    "go-cobra",
-    "go",
-    ["test", "./..."],
-    new URL("../go-cobra/", import.meta.url),
-  ],
+  ["go", "go-cobra", "sh", ["scripts/check-go-cobra.sh"], rootPath],
+  ["go", "go-release", "sh", ["scripts/check-go-release.sh"], rootPath],
   ["rust", "rust", "cargo", ["test"], new URL("../rust/", import.meta.url)],
   [
     "rust",

@@ -1,0 +1,1107 @@
+{
+  "$schema": "./hosts.schema.json",
+  "schemaVersion": 1,
+  "hosts": [
+    {
+      "id": "adal",
+      "displayName": "AdaL",
+      "projectSkillsDirs": [
+        ".adal/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.adal/skills"
+      ],
+      "detect": [
+        "~/.adal"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "aider-desk",
+      "displayName": "AiderDesk",
+      "projectSkillsDirs": [
+        ".aider-desk/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.aider-desk/skills"
+      ],
+      "detect": [
+        "~/.aider-desk"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "amp",
+      "displayName": "Amp",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/agents/skills"
+      ],
+      "detect": [
+        "~/.config/amp",
+        "~/.config/agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "antigravity",
+      "displayName": "Antigravity",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.gemini/antigravity/skills"
+      ],
+      "detect": [
+        "~/.gemini/antigravity"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "antigravity-cli",
+      "displayName": "Antigravity CLI",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.gemini/antigravity-cli/skills"
+      ],
+      "detect": [
+        "~/.gemini/antigravity-cli"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "astrbot",
+      "displayName": "AstrBot",
+      "projectSkillsDirs": [
+        "data/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.astrbot/data/skills"
+      ],
+      "detect": [
+        "~/.astrbot",
+        "data/skills",
+        "~/.astrbot/data"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "augment",
+      "displayName": "Augment",
+      "projectSkillsDirs": [
+        ".augment/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.augment/skills"
+      ],
+      "detect": [
+        "~/.augment"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "autohand-code",
+      "displayName": "Autohand Code CLI",
+      "projectSkillsDirs": [
+        ".autohand/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.autohand/skills"
+      ],
+      "detect": [
+        "~/.autohand"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "bob",
+      "displayName": "IBM Bob",
+      "projectSkillsDirs": [
+        ".bob/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.bob/skills"
+      ],
+      "detect": [
+        "~/.bob"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "claude-code",
+      "displayName": "Claude Code",
+      "projectSkillsDirs": [
+        ".claude/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.claude/skills"
+      ],
+      "detect": [
+        "~/.claude"
+      ],
+      "status": "verified"
+    },
+    {
+      "id": "cline",
+      "displayName": "Cline",
+      "projectSkillsDirs": [
+        ".agents/skills",
+        ".cline/skills",
+        ".clinerules/skills",
+        ".claude/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills",
+        "~/.cline/skills"
+      ],
+      "detect": [
+        "~/.cline",
+        "~/.agents"
+      ],
+      "status": "documented"
+    },
+    {
+      "id": "codearts-agent",
+      "displayName": "CodeArts Agent",
+      "projectSkillsDirs": [
+        ".codeartsdoer/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.codeartsdoer/skills"
+      ],
+      "detect": [
+        "~/.codeartsdoer"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "codebuddy",
+      "displayName": "CodeBuddy",
+      "projectSkillsDirs": [
+        ".codebuddy/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.codebuddy/skills"
+      ],
+      "detect": [
+        "~/.codebuddy",
+        ".codebuddy"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "codemaker",
+      "displayName": "Codemaker",
+      "projectSkillsDirs": [
+        ".codemaker/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.codemaker/skills"
+      ],
+      "detect": [
+        "~/.codemaker"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "codestudio",
+      "displayName": "Code Studio",
+      "projectSkillsDirs": [
+        ".codestudio/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.codestudio/skills"
+      ],
+      "detect": [
+        "~/.codestudio"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "codex",
+      "displayName": "Codex",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills",
+        "~/.codex/skills"
+      ],
+      "detect": [
+        "~/.codex",
+        "~/.agents/skills",
+        "~/.agents"
+      ],
+      "status": "verified",
+      "notes": [
+        "Keep both ~/.agents/skills and ~/.codex/skills for compatibility."
+      ]
+    },
+    {
+      "id": "command-code",
+      "displayName": "Command Code",
+      "projectSkillsDirs": [
+        ".commandcode/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.commandcode/skills"
+      ],
+      "detect": [
+        "~/.commandcode"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "continue",
+      "displayName": "Continue",
+      "projectSkillsDirs": [
+        ".continue/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.continue/skills"
+      ],
+      "detect": [
+        "~/.continue",
+        ".continue"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "cortex",
+      "displayName": "Cortex Code",
+      "projectSkillsDirs": [
+        ".cortex/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.snowflake/cortex/skills"
+      ],
+      "detect": [
+        "~/.snowflake/cortex"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "crush",
+      "displayName": "Crush",
+      "projectSkillsDirs": [
+        ".crush/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/crush/skills"
+      ],
+      "detect": [
+        "~/.config/crush"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "cursor",
+      "displayName": "Cursor",
+      "projectSkillsDirs": [
+        ".agents/skills",
+        ".cursor/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.cursor/skills",
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.cursor",
+        "~/.agents"
+      ],
+      "status": "documented"
+    },
+    {
+      "id": "deepagents",
+      "displayName": "Deep Agents",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.deepagents/agent/skills"
+      ],
+      "detect": [
+        "~/.deepagents",
+        "~/.deepagents/agent"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "devin",
+      "displayName": "Devin for Terminal",
+      "projectSkillsDirs": [
+        ".devin/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/devin/skills"
+      ],
+      "detect": [
+        "~/.config/devin"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "dexto",
+      "displayName": "Dexto",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.dexto",
+        "~/.agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "droid",
+      "displayName": "Droid",
+      "projectSkillsDirs": [
+        ".factory/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.factory/skills"
+      ],
+      "detect": [
+        "~/.factory"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "eve",
+      "displayName": "Eve",
+      "projectSkillsDirs": [
+        "agent/skills"
+      ],
+      "userSkillsDirs": [],
+      "detect": [
+        "agent",
+        "package.json"
+      ],
+      "status": "community",
+      "notes": [
+        "Project-only host; userSkillsDirs is intentionally empty.",
+        "Detect from Eve project shape; no global skill directory."
+      ]
+    },
+    {
+      "id": "firebender",
+      "displayName": "Firebender",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.firebender/skills"
+      ],
+      "detect": [
+        "~/.firebender"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "forgecode",
+      "displayName": "ForgeCode",
+      "projectSkillsDirs": [
+        ".forge/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.forge/skills"
+      ],
+      "detect": [
+        "~/.forge"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "gemini-cli",
+      "displayName": "Gemini CLI",
+      "projectSkillsDirs": [
+        ".agents/skills",
+        ".gemini/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.gemini/skills",
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.gemini",
+        "~/.agents"
+      ],
+      "status": "documented"
+    },
+    {
+      "id": "github-copilot",
+      "displayName": "GitHub Copilot",
+      "projectSkillsDirs": [
+        ".agents/skills",
+        ".github/skills",
+        ".claude/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.copilot/skills",
+        "~/.agents/skills",
+        "~/.claude/skills"
+      ],
+      "detect": [
+        "~/.copilot",
+        "~/.agents",
+        "~/.claude"
+      ],
+      "status": "documented"
+    },
+    {
+      "id": "goose",
+      "displayName": "Goose",
+      "projectSkillsDirs": [
+        ".goose/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/goose/skills"
+      ],
+      "detect": [
+        "~/.config/goose"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "hermes-agent",
+      "displayName": "Hermes Agent",
+      "projectSkillsDirs": [
+        ".hermes/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.hermes/skills"
+      ],
+      "detect": [
+        "~/.hermes"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "iflow-cli",
+      "displayName": "iFlow CLI",
+      "projectSkillsDirs": [
+        ".iflow/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.iflow/skills"
+      ],
+      "detect": [
+        "~/.iflow"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "inference-sh",
+      "displayName": "inference.sh",
+      "projectSkillsDirs": [
+        ".inferencesh/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.inferencesh/skills"
+      ],
+      "detect": [
+        "~/.inferencesh"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "jazz",
+      "displayName": "Jazz",
+      "projectSkillsDirs": [
+        ".jazz/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.jazz/skills"
+      ],
+      "detect": [
+        "~/.jazz",
+        ".jazz"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "junie",
+      "displayName": "Junie",
+      "projectSkillsDirs": [
+        ".junie/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.junie/skills"
+      ],
+      "detect": [
+        "~/.junie"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "kilo",
+      "displayName": "Kilo Code",
+      "projectSkillsDirs": [
+        ".kilocode/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.kilocode/skills"
+      ],
+      "detect": [
+        "~/.kilocode"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "kimi-cli",
+      "displayName": "Kimi Code CLI",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/agents/skills",
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.config/agents",
+        "~/.kimi-code",
+        "~/.kimi",
+        "~/.agents"
+      ],
+      "status": "community",
+      "notes": [
+        "kimi-code-cli is an alias for the same Kimi Code CLI path family."
+      ],
+      "aliases": [
+        "kimi-code-cli"
+      ]
+    },
+    {
+      "id": "kiro-cli",
+      "displayName": "Kiro CLI",
+      "projectSkillsDirs": [
+        ".kiro/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.kiro/skills"
+      ],
+      "detect": [
+        "~/.kiro"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "kode",
+      "displayName": "Kode",
+      "projectSkillsDirs": [
+        ".kode/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.kode/skills"
+      ],
+      "detect": [
+        "~/.kode"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "lingma",
+      "displayName": "Lingma",
+      "projectSkillsDirs": [
+        ".lingma/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.lingma/skills"
+      ],
+      "detect": [
+        "~/.lingma"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "loaf",
+      "displayName": "Loaf",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.loaf",
+        "~/.agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "mcpjam",
+      "displayName": "MCPJam",
+      "projectSkillsDirs": [
+        ".mcpjam/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.mcpjam/skills"
+      ],
+      "detect": [
+        "~/.mcpjam"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "mistral-vibe",
+      "displayName": "Mistral Vibe",
+      "projectSkillsDirs": [
+        ".vibe/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.vibe/skills"
+      ],
+      "detect": [
+        "~/.vibe"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "moxby",
+      "displayName": "Moxby",
+      "projectSkillsDirs": [
+        ".moxby/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.moxby/skills"
+      ],
+      "detect": [
+        "~/.moxby"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "mux",
+      "displayName": "Mux",
+      "projectSkillsDirs": [
+        ".mux/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.mux/skills"
+      ],
+      "detect": [
+        "~/.mux"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "neovate",
+      "displayName": "Neovate",
+      "projectSkillsDirs": [
+        ".neovate/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.neovate/skills"
+      ],
+      "detect": [
+        "~/.neovate"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "ona",
+      "displayName": "Ona",
+      "projectSkillsDirs": [
+        ".ona/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.ona/skills"
+      ],
+      "detect": [
+        "~/.ona"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "openclaw",
+      "displayName": "OpenClaw",
+      "projectSkillsDirs": [
+        "skills"
+      ],
+      "userSkillsDirs": [
+        "~/.openclaw/skills"
+      ],
+      "detect": [
+        "~/.openclaw",
+        "~/.clawdbot",
+        "~/.moltbot"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "opencode",
+      "displayName": "OpenCode",
+      "projectSkillsDirs": [
+        ".agents/skills",
+        ".opencode/skills",
+        ".claude/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/opencode/skills",
+        "~/.agents/skills",
+        "~/.claude/skills"
+      ],
+      "detect": [
+        "~/.config/opencode",
+        "~/.agents",
+        "~/.claude"
+      ],
+      "status": "verified"
+    },
+    {
+      "id": "openhands",
+      "displayName": "OpenHands",
+      "projectSkillsDirs": [
+        ".openhands/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.openhands/skills"
+      ],
+      "detect": [
+        "~/.openhands"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "pi",
+      "displayName": "Pi",
+      "projectSkillsDirs": [
+        ".pi/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.pi/agent/skills"
+      ],
+      "detect": [
+        "~/.pi/agent"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "pochi",
+      "displayName": "Pochi",
+      "projectSkillsDirs": [
+        ".pochi/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.pochi/skills"
+      ],
+      "detect": [
+        "~/.pochi"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "promptscript",
+      "displayName": "PromptScript",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [],
+      "detect": [
+        ".promptscript",
+        "promptscript.yaml"
+      ],
+      "status": "community",
+      "notes": [
+        "Project-only host; userSkillsDirs is intentionally empty."
+      ]
+    },
+    {
+      "id": "qoder",
+      "displayName": "Qoder",
+      "projectSkillsDirs": [
+        ".qoder/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.qoder/skills"
+      ],
+      "detect": [
+        "~/.qoder"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "qoder-cn",
+      "displayName": "Qoder CN",
+      "projectSkillsDirs": [
+        ".qoder/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.qoder-cn/skills"
+      ],
+      "detect": [
+        "~/.qoder-cn"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "qwen-code",
+      "displayName": "Qwen Code",
+      "projectSkillsDirs": [
+        ".qwen/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.qwen/skills"
+      ],
+      "detect": [
+        "~/.qwen"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "reasonix",
+      "displayName": "Reasonix",
+      "projectSkillsDirs": [
+        ".reasonix/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.reasonix/skills"
+      ],
+      "detect": [
+        "~/.reasonix"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "replit",
+      "displayName": "Replit",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.config/agents/skills"
+      ],
+      "detect": [
+        ".replit",
+        "~/.config/agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "roo",
+      "displayName": "Roo Code",
+      "aliases": [
+        "roo-code"
+      ],
+      "projectSkillsDirs": [
+        ".roo/skills",
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.roo/skills",
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.roo",
+        "~/.agents"
+      ],
+      "status": "documented"
+    },
+    {
+      "id": "rovodev",
+      "displayName": "Rovo Dev",
+      "projectSkillsDirs": [
+        ".rovodev/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.rovodev/skills"
+      ],
+      "detect": [
+        "~/.rovodev"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "tabnine-cli",
+      "displayName": "Tabnine CLI",
+      "projectSkillsDirs": [
+        ".tabnine/agent/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.tabnine/agent/skills"
+      ],
+      "detect": [
+        "~/.tabnine",
+        "~/.tabnine/agent"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "terramind",
+      "displayName": "Terramind",
+      "projectSkillsDirs": [
+        ".terramind/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.terramind/skills"
+      ],
+      "detect": [
+        "~/.terramind"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "tinycloud",
+      "displayName": "Tinycloud",
+      "projectSkillsDirs": [
+        ".tinycloud/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.tinycloud/skills"
+      ],
+      "detect": [
+        "~/.tinycloud"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "trae",
+      "displayName": "Trae",
+      "projectSkillsDirs": [
+        ".trae/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.trae/skills"
+      ],
+      "detect": [
+        "~/.trae"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "trae-cn",
+      "displayName": "Trae CN",
+      "projectSkillsDirs": [
+        ".trae/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.trae-cn/skills"
+      ],
+      "detect": [
+        "~/.trae-cn"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "universal",
+      "displayName": "Universal",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills",
+        "~/.config/agents/skills"
+      ],
+      "detect": [
+        "~/.agents",
+        "~/.config/agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "warp",
+      "displayName": "Warp",
+      "projectSkillsDirs": [
+        ".agents/skills",
+        ".warp/skills",
+        ".claude/skills",
+        ".codex/skills",
+        ".cursor/skills",
+        ".gemini/skills",
+        ".copilot/skills",
+        ".factory/skills",
+        ".github/skills",
+        ".opencode/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills",
+        "~/.warp/skills",
+        "~/.claude/skills",
+        "~/.codex/skills",
+        "~/.cursor/skills",
+        "~/.gemini/skills",
+        "~/.copilot/skills",
+        "~/.factory/skills",
+        "~/.github/skills",
+        "~/.opencode/skills"
+      ],
+      "detect": [
+        "~/.warp",
+        "~/.agents",
+        "~/.claude",
+        "~/.codex",
+        "~/.cursor",
+        "~/.gemini",
+        "~/.copilot",
+        "~/.factory",
+        "~/.github",
+        "~/.opencode"
+      ],
+      "status": "documented"
+    },
+    {
+      "id": "windsurf",
+      "displayName": "Windsurf",
+      "projectSkillsDirs": [
+        ".windsurf/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.codeium/windsurf/skills"
+      ],
+      "detect": [
+        "~/.codeium/windsurf"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "zed",
+      "displayName": "Zed",
+      "projectSkillsDirs": [
+        ".agents/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.agents/skills"
+      ],
+      "detect": [
+        "~/.config/zed",
+        "~/.agents"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "zencoder",
+      "displayName": "Zencoder",
+      "projectSkillsDirs": [
+        ".zencoder/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.zencoder/skills"
+      ],
+      "detect": [
+        "~/.zencoder"
+      ],
+      "status": "community"
+    },
+    {
+      "id": "zenflow",
+      "displayName": "Zenflow",
+      "projectSkillsDirs": [
+        ".zencoder/skills"
+      ],
+      "userSkillsDirs": [
+        "~/.zencoder/skills"
+      ],
+      "detect": [
+        "~/.zencoder"
+      ],
+      "status": "community"
+    }
+  ]
+}

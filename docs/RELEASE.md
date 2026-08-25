@@ -55,6 +55,16 @@ Do not tag the release branch. Do not publish packages by hand during the normal
 
 The release workflow publishes npm, PyPI, and crates.io packages, creates the `go/vX.Y.Z` and `go-cobra/vX.Y.Z` tags, creates the GitHub Release, and runs the public install smoke check.
 
+The Go modules share the same release version. No workspace or local replacement
+is committed. Source checks copy the modules to a temporary directory and add a
+one-off replacement there so the Cobra adapter can test unreleased core APIs.
+Release checks disable workspace resolution and verify both module archives from
+a temporary consumer:
+
+```bash
+make test-go-release
+```
+
 ## First npm Release
 
 npm trusted publishing is configured in the npm package settings. For the first package version, the package settings may not exist yet.

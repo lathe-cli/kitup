@@ -28,7 +28,7 @@ type goldenCase struct {
 
 func TestGoldenCases(t *testing.T) {
 	var file goldenFile
-	readJSON(t, "../testdata/cases/bundled-skill-install.json", &file)
+	readJSON(t, "testdata/cases/bundled-skill-install.json", &file)
 	for _, tc := range file.Cases {
 		t.Run(tc.ID, func(t *testing.T) {
 			root := t.TempDir()
@@ -530,7 +530,7 @@ func repoPathFromCase(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join("..", path)
+	return path
 }
 
 func hostIDs(hosts []Host) []string {
