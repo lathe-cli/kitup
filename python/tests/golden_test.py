@@ -12,6 +12,7 @@ import threading
 
 from kitup import (
     BaseOptions,
+    BundledMetadata,
     InstallOptions,
     InstallSelectionOptions,
     InstallWorkflowOptions,
@@ -27,6 +28,7 @@ from kitup import (
     load_host_spec,
     parse_install_flags,
     plan_bundled_skill,
+    read_installed_metadata,
     resolve_hosts,
     resolve_install_selection,
     run_bundled_skill_install_with_io,
@@ -81,6 +83,24 @@ def run_case(case, home: Path, workspace: Path) -> None:
         result = validate_skill_bundle(skill_bundle_from_case(case))
         assert result.valid == case["expected"]["valid"]
         assert result.error_code == case["expected"].get("errorCode")
+        return
+
+    if operation == "read-installed-metadata":
+        try:
+            metadata = read_installed_metadata(
+                Path(
+                    case["options"]["targetDir"]
+                    .replace("$HOME", str(home))
+                    .replace("$WORKSPACE", str(workspace))
+                )
+            )
+        except Exception:
+            assert case["expected"].get("throws") is True
+            return
+        assert not case["expected"].get("throws")
+        assert normalize_value(metadata) == camel_to_snake_dict(
+            case["expected"]["installedMetadata"]
+        )
         return
 
     if operation == "parse-install-flags":
@@ -450,10 +470,19 @@ def workflow_options_from_case(
 
 
 def skill_bundle_from_case(case) -> object:
+    raw_metadata = case["options"].get("bundleMetadata", {})
+    metadata = BundledMetadata(
+        cli_version=raw_metadata.get("cliVersion"),
+        revision=raw_metadata.get("revision"),
+        source_id=raw_metadata.get("sourceId"),
+        provenance=raw_metadata.get("provenance", {}),
+    )
     if "skillFiles" in case["options"]:
-        return files_bundle(skill_files(case["options"]["skillFiles"]))
+        return files_bundle(skill_files(case["options"]["skillFiles"]), metadata)
     if "skillBundleDir" in case["options"]:
-        return directory_bundle(str(repo_path(case["options"]["skillBundleDir"])))
+        return directory_bundle(
+            str(repo_path(case["options"]["skillBundleDir"])), metadata
+        )
     if "githubBundle" in case["options"]:
         bundle = case["options"]["githubBundle"]
         return github_bundle(

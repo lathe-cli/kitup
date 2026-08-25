@@ -179,11 +179,20 @@ pub struct SkillFile {
     pub mode: Option<u32>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct BundledMetadata {
+    pub cli_version: Option<String>,
+    pub revision: Option<String>,
+    pub source_id: Option<String>,
+    pub provenance: BTreeMap<String, String>,
+}
+
 #[derive(Clone, Debug)]
 pub enum SkillBundle {
     Directory(PathBuf),
     Files(Vec<SkillFile>),
     GitHub(GitHubBundleOptions),
+    WithMetadata(Box<SkillBundle>, BundledMetadata),
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +239,10 @@ pub fn include_dir_bundle(dir: &include_dir::Dir<'_>) -> SkillBundle {
 
 pub fn github_bundle(options: GitHubBundleOptions) -> SkillBundle {
     SkillBundle::GitHub(options)
+}
+
+pub fn with_bundle_metadata(bundle: SkillBundle, metadata: BundledMetadata) -> SkillBundle {
+    SkillBundle::WithMetadata(Box::new(bundle), metadata)
 }
 
 #[derive(Clone, Debug)]
@@ -325,16 +338,24 @@ pub struct InstallWorkflowExit {
     pub message: String,
 }
 
-#[derive(Deserialize)]
-struct Metadata {
-    #[serde(rename = "schemaVersion")]
-    schema_version: u32,
-    #[serde(rename = "appId")]
-    app_id: String,
-    #[serde(rename = "skillName")]
-    skill_name: String,
-    source: String,
-    hash: String,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledMetadata {
+    pub schema_version: u32,
+    pub app_id: String,
+    pub skill_name: String,
+    pub source: String,
+    pub hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provenance: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -355,6 +376,8 @@ struct BundleMetadata {
     source: String,
     source_id: Option<String>,
     version: Option<String>,
+    cli_version: Option<String>,
+    revision: Option<String>,
     provenance: BTreeMap<String, String>,
 }
 
@@ -1008,12 +1031,64 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Uninsta
                 report.conflicts.push(with_reason(result, "owner-mismatch"))
             }
             MetadataState::Managed(_) => {
-                fs::remove_dir_all(&target.target_dir)?;
-                report.removed.push(result);
+                if let Some(reason) =
+                    remove_managed_target(&target.target_dir, &options.app_id, &options.skill_name)?
+                {
+                    report.conflicts.push(with_reason(result, &reason));
+                } else {
+                    report.removed.push(result);
+                }
             }
         }
     }
     Ok(report)
+}
+
+fn remove_managed_target(
+    target_dir: &Path,
+    app_id: &str,
+    skill_name: &str,
+) -> io::Result<Option<String>> {
+    let quarantine = make_staging_dir(target_dir)?;
+    fs::remove_dir(&quarantine)?;
+    fs::rename(target_dir, &quarantine)?;
+    let metadata = match read_installed_metadata(&quarantine) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            restore_quarantined_target(target_dir, &quarantine)?;
+            return Ok(Some("unmanaged".to_string()));
+        }
+    };
+    let Some(metadata) = metadata else {
+        restore_quarantined_target(target_dir, &quarantine)?;
+        return Ok(Some("unmanaged".to_string()));
+    };
+    let reason = if metadata.skill_name != skill_name {
+        Some("unmanaged")
+    } else if metadata.app_id != app_id {
+        Some("owner-mismatch")
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        restore_quarantined_target(target_dir, &quarantine)?;
+        return Ok(Some(reason.to_string()));
+    }
+    fs::remove_dir_all(quarantine)?;
+    Ok(None)
+}
+
+fn restore_quarantined_target(target_dir: &Path, quarantine: &Path) -> io::Result<()> {
+    if target_dir.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "uninstall target changed; preserved quarantined target at {}",
+                quarantine.display()
+            ),
+        ));
+    }
+    fs::rename(quarantine, target_dir)
 }
 
 fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallReport> {
@@ -1114,7 +1189,8 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
                 }
             }
             MetadataState::Managed(meta) if meta.hash == hash => {
-                if repair_skill_bundle_modes(&bundle, &target.target_dir, write)? {
+                let repaired = repair_skill_bundle_modes(&bundle, &target.target_dir, write)?;
+                if repaired || !installed_metadata_matches_bundle(&meta, &bundle_metadata) {
                     if write {
                         write_metadata(
                             &target.target_dir,
@@ -1150,7 +1226,7 @@ fn install_or_plan(options: &InstallOptions, write: bool) -> io::Result<InstallR
 enum MetadataState {
     Missing,
     Unmanaged,
-    Managed(Metadata),
+    Managed(Box<InstalledMetadata>),
 }
 
 fn copy_managed_skill(
@@ -1297,6 +1373,12 @@ fn write_metadata(
     if let Some(version) = &bundle_metadata.version {
         value["version"] = json!(version);
     }
+    if let Some(cli_version) = &bundle_metadata.cli_version {
+        value["cliVersion"] = json!(cli_version);
+    }
+    if let Some(revision) = &bundle_metadata.revision {
+        value["revision"] = json!(revision);
+    }
     if !bundle_metadata.provenance.is_empty() {
         value["provenance"] = json!(bundle_metadata.provenance);
     }
@@ -1310,21 +1392,77 @@ fn read_metadata(target_dir: &Path) -> MetadataState {
     if !target_dir.exists() {
         return MetadataState::Missing;
     }
-    let Ok(data) = fs::read(target_dir.join(".kitup.json")) else {
-        return MetadataState::Unmanaged;
-    };
-    match serde_json::from_slice::<Metadata>(&data) {
-        Ok(meta) if is_owned_metadata(&meta) => MetadataState::Managed(meta),
+    match read_installed_metadata(target_dir) {
+        Ok(Some(meta)) => MetadataState::Managed(Box::new(meta)),
         _ => MetadataState::Unmanaged,
     }
 }
 
-fn is_owned_metadata(meta: &Metadata) -> bool {
+pub fn read_installed_metadata(target_dir: &Path) -> io::Result<Option<InstalledMetadata>> {
+    let data = match fs::read(target_dir.join(".kitup.json")) {
+        Ok(data) => data,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let value: Value = serde_json::from_slice(&data)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid installed metadata"))?;
+    if !has_valid_optional_metadata_fields(&value) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid installed metadata",
+        ));
+    }
+    let metadata: InstalledMetadata = serde_json::from_value(value)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid installed metadata"))?;
+    if !is_owned_metadata(&metadata) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid installed metadata",
+        ));
+    }
+    Ok(Some(metadata))
+}
+
+fn has_valid_optional_metadata_fields(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    for key in ["sourceId", "version", "cliVersion", "revision"] {
+        if let Some(value) = object.get(key) {
+            if !matches!(value.as_str(), Some(text) if !text.is_empty()) {
+                return false;
+            }
+        }
+    }
+    if let Some(value) = object.get("provenance") {
+        let Some(provenance) = value.as_object() else {
+            return false;
+        };
+        if provenance.values().any(|value| !value.is_string()) {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_owned_metadata(meta: &InstalledMetadata) -> bool {
     meta.schema_version == 1
         && !meta.app_id.is_empty()
         && valid_skill_name(&meta.skill_name)
         && (meta.source == "bundled" || meta.source == "github")
         && !meta.hash.is_empty()
+}
+
+fn installed_metadata_matches_bundle(
+    installed: &InstalledMetadata,
+    bundled: &BundleMetadata,
+) -> bool {
+    installed.source == bundled.source
+        && installed.source_id == bundled.source_id
+        && installed.version == bundled.version
+        && installed.cli_version == bundled.cli_version
+        && installed.revision == bundled.revision
+        && installed.provenance == bundled.provenance
 }
 
 fn target_result(target: &TargetGroup) -> TargetResult {
@@ -1661,12 +1799,38 @@ fn resolve_skill_bundle(
 ) -> io::Result<(NormalizedSkillBundle, BundleMetadata)> {
     match bundle {
         SkillBundle::GitHub(options) => resolve_github_bundle(options),
+        SkillBundle::WithMetadata(bundle, metadata) => {
+            let (bundle, mut resolved) = resolve_skill_bundle(bundle)?;
+            if metadata
+                .source_id
+                .as_deref()
+                .is_some_and(|value| !value.is_empty())
+            {
+                resolved.source_id = metadata.source_id.clone();
+            }
+            resolved.cli_version = metadata
+                .cli_version
+                .as_ref()
+                .filter(|value| !value.is_empty())
+                .cloned();
+            resolved.revision = metadata
+                .revision
+                .as_ref()
+                .filter(|value| !value.is_empty())
+                .cloned();
+            if !metadata.provenance.is_empty() {
+                resolved.provenance = metadata.provenance.clone();
+            }
+            Ok((bundle, resolved))
+        }
         _ => Ok((
             read_skill_bundle(bundle)?,
             BundleMetadata {
                 source: "bundled".to_string(),
                 source_id: None,
                 version: None,
+                cli_version: None,
+                revision: None,
                 provenance: BTreeMap::new(),
             },
         )),
@@ -1764,6 +1928,8 @@ fn resolve_github_bundle(
                 options.owner, options.repo, root
             )),
             version: Some(options.ref_name.clone()),
+            cli_version: None,
+            revision: None,
             provenance,
         },
     ))
@@ -1830,6 +1996,7 @@ fn read_skill_bundle(bundle: &SkillBundle) -> io::Result<NormalizedSkillBundle> 
             let (bundle, _) = resolve_github_bundle(options)?;
             Ok(bundle)
         }
+        SkillBundle::WithMetadata(bundle, _) => read_skill_bundle(bundle),
     }
 }
 

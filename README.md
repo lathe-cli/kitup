@@ -28,6 +28,7 @@ mycli skill install
 - validate bundled skills
 - install from a local directory, embedded bundle tree, or public GitHub bundle directory
 - copy, update, and uninstall kitup-owned installs
+- inspect installed ownership, source, CLI version, and revision metadata
 - refuse unsafe overwrite conflicts
 - return structured install reports
 
@@ -143,10 +144,20 @@ import (
 )
 
 root.AddCommand(kitupcobra.NewSkillCommand(kitupcobra.Options{
-	AppID:  "mycli",
-	Bundle: kitup.FSBundle(embeddedSkills, "skills/mycli"),
+	AppID:     "mycli",
+	SkillName: "mycli",
+	Bundle: kitup.WithBundleMetadata(
+		kitup.FSBundle(embeddedSkills, "skills/mycli"),
+		kitup.BundledMetadata{
+			CLIVersion: "1.2.3",
+			Revision:   "abc123",
+			SourceID:   "mycli:embedded",
+		},
+	),
 }))
 ```
+
+The command includes `skill install`, `skill status`, and `skill uninstall`. Status and uninstall support `--json`; uninstall only removes directories with valid `.kitup.json` ownership matching `AppID`.
 
 ### Rust
 

@@ -46,6 +46,7 @@
             "install",
             "parse-install-flags",
             "plan",
+            "read-installed-metadata",
             "run-install-workflow",
             "resolve-install-selection",
             "resolve-hosts",

@@ -25,6 +25,7 @@ import {
   loadHostSpec,
   planBundledSkill,
   parseInstallFlags,
+  readInstalledMetadata,
   resolveInstallSelection,
   resolveHosts,
   runBundledSkillInstall,
@@ -157,6 +158,13 @@ async function runCase(testCase: any, home: string, workspace: string) {
     const result = await validateSkillBundle(options.skillBundle, options.cwd);
     assert.equal(result.valid, testCase.expected.valid);
     assert.equal(result.errorCode, testCase.expected.errorCode);
+    return;
+  }
+
+  if (testCase.operation === "read-installed-metadata") {
+    const result = readInstalledMetadata(options.targetDir);
+    if (testCase.expected.throws) await assert.rejects(result);
+    else assert.deepEqual(await result, testCase.expected.installedMetadata);
     return;
   }
 
@@ -471,9 +479,13 @@ function expandOptions(options: any, home: string, workspace: string) {
   if (expanded.skillBundleDir)
     expanded.skillBundle = directoryBundle(
       resolveRepoPath(expanded.skillBundleDir),
+      expanded.bundleMetadata,
     );
   if (expanded.skillFiles)
-    expanded.skillBundle = filesBundle(expanded.skillFiles);
+    expanded.skillBundle = filesBundle(
+      expanded.skillFiles,
+      expanded.bundleMetadata,
+    );
   if (expanded.githubBundle)
     expanded.skillBundle = githubBundle(expanded.githubBundle);
   return expanded;

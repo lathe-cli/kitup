@@ -9,6 +9,7 @@ from ._github import fetch_github_directory_with_metadata
 from ._metadata import (
     is_valid_skill_name,
     read_install_metadata,
+    read_installed_metadata,
     write_install_metadata,
 )
 from .bundle import (
@@ -244,7 +245,10 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
                 report.conflicts.append(target_status(target, "owner-mismatch"))
             continue
         if metadata.get("hash") == digest:
-            if repair_bundle_modes(normalized.files, target_dir, write=write):
+            repaired = repair_bundle_modes(normalized.files, target_dir, write=write)
+            if repaired or not _installed_metadata_matches_bundle(
+                metadata, bundle_metadata
+            ):
                 if write:
                     write_bundle_metadata(
                         target_dir,
@@ -306,6 +310,8 @@ def write_bundle_metadata(
         source=str(metadata["source"]),
         source_id=_metadata_text(metadata, "source_id"),
         version=_metadata_text(metadata, "version"),
+        cli_version=_metadata_text(metadata, "cli_version"),
+        revision=_metadata_text(metadata, "revision"),
         provenance=_metadata_provenance(metadata),
     )
 
@@ -336,21 +342,62 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
             report.conflicts.append(target_status(target, "owner-mismatch"))
             continue
 
-        shutil.rmtree(target_dir)
+        reason = _remove_managed_target(
+            target_dir, app_id=options.app_id, skill_name=options.skill_name
+        )
+        if reason is not None:
+            report.conflicts.append(target_status(target, reason))
+            continue
         report.removed.append(result)
 
     return report
+
+
+def _remove_managed_target(
+    target_dir: Path, *, app_id: str, skill_name: str
+) -> str | None:
+    quarantine = Path(
+        tempfile.mkdtemp(
+            prefix=f".{target_dir.name}.kitup-uninstall-",
+            dir=target_dir.parent,
+        )
+    )
+    quarantine.rmdir()
+    target_dir.replace(quarantine)
+
+    def restore() -> None:
+        if target_dir.exists():
+            raise RuntimeError(
+                f"uninstall target changed; preserved quarantined target at {quarantine}"
+            )
+        quarantine.replace(target_dir)
+
+    try:
+        metadata = read_installed_metadata(quarantine)
+    except Exception:
+        restore()
+        return "unmanaged"
+    if metadata is None or metadata.skill_name != skill_name:
+        restore()
+        return "unmanaged"
+    if metadata.app_id != app_id:
+        restore()
+        return "owner-mismatch"
+    shutil.rmtree(quarantine)
+    return None
 
 
 def _resolve_bundle_and_metadata(
     skill_bundle: object, *, cwd: str | None
 ) -> tuple[object, dict[str, object]]:
     if isinstance(skill_bundle, DirectoryBundle):
-        return normalize_directory_bundle(skill_bundle.path, cwd=cwd), {
-            "source": "bundled"
-        }
+        return normalize_directory_bundle(
+            skill_bundle.path, cwd=cwd
+        ), _resolved_bundled_metadata(skill_bundle.metadata)
     if isinstance(skill_bundle, FilesBundle):
-        return normalize_files_bundle(skill_bundle.files), {"source": "bundled"}
+        return normalize_files_bundle(skill_bundle.files), _resolved_bundled_metadata(
+            skill_bundle.metadata
+        )
     if isinstance(skill_bundle, GitHubBundle):
         files, metadata = fetch_github_directory_with_metadata(skill_bundle.options)
         return normalize_files_bundle(files), metadata
@@ -404,9 +451,46 @@ def _resolve_install_targets_with_errors(
 
 def _metadata_text(metadata: dict[str, object], key: str) -> str | None:
     value = metadata.get(key)
-    return value if isinstance(value, str) else None
+    return value if isinstance(value, str) and value else None
 
 
 def _metadata_provenance(metadata: dict[str, object]) -> dict[str, object] | None:
     value = metadata.get("provenance")
-    return value if isinstance(value, dict) else None
+    return value if isinstance(value, dict) and value else None
+
+
+def _resolved_bundled_metadata(metadata: object) -> dict[str, object]:
+    source_id = getattr(metadata, "source_id", None)
+    cli_version = getattr(metadata, "cli_version", None)
+    revision = getattr(metadata, "revision", None)
+    provenance = getattr(metadata, "provenance", None)
+    for value in (source_id, cli_version, revision):
+        if value is not None and not isinstance(value, str):
+            raise TypeError("invalid bundled metadata")
+    if not isinstance(provenance, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in provenance.items()
+    ):
+        raise TypeError("invalid bundled metadata")
+    return {
+        "source": "bundled",
+        "source_id": source_id or None,
+        "cli_version": cli_version or None,
+        "revision": revision or None,
+        "provenance": provenance,
+    }
+
+
+def _installed_metadata_matches_bundle(
+    installed: dict[str, object], bundled: dict[str, object]
+) -> bool:
+    return all(
+        installed.get(installed_key) == bundled.get(bundle_key)
+        for installed_key, bundle_key in (
+            ("source", "source"),
+            ("sourceId", "source_id"),
+            ("version", "version"),
+            ("cliVersion", "cli_version"),
+            ("revision", "revision"),
+        )
+    ) and installed.get("provenance", {}) == bundled.get("provenance", {})

@@ -64,6 +64,28 @@ class SkillFile:
 
 
 @dataclass(frozen=True)
+class BundledMetadata:
+    cli_version: str | None = None
+    revision: str | None = None
+    source_id: str | None = None
+    provenance: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class InstalledMetadata:
+    schema_version: int
+    app_id: str
+    skill_name: str
+    source: Literal["bundled", "github"]
+    hash: str
+    source_id: str | None = None
+    version: str | None = None
+    cli_version: str | None = None
+    revision: str | None = None
+    provenance: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class GitHubBundleOptions:
     owner: str
     repo: str

@@ -73,9 +73,16 @@ export interface SkillFile {
   mode?: number;
 }
 
+export interface BundledMetadata {
+  cliVersion?: string;
+  revision?: string;
+  sourceId?: string;
+  provenance?: Record<string, string>;
+}
+
 export type SkillBundle =
-  | { kind: "directory"; path: string }
-  | { kind: "files"; files: SkillFile[] }
+  | { kind: "directory"; path: string; metadata?: BundledMetadata }
+  | { kind: "files"; files: SkillFile[]; metadata?: BundledMetadata }
   | { kind: "github"; options: GitHubBundleOptions };
 
 export interface GitHubBundleOptions {
@@ -245,7 +252,7 @@ export interface SkillInfo {
     "missing-skill-md" | "invalid-frontmatter" | "invalid-skill-bundle";
 }
 
-interface InstallMetadata {
+export interface InstalledMetadata {
   schemaVersion: 1;
   appId: string;
   skillName: string;
@@ -253,6 +260,8 @@ interface InstallMetadata {
   hash: string;
   sourceId?: string;
   version?: string;
+  cliVersion?: string;
+  revision?: string;
   provenance?: Record<string, string>;
 }
 
@@ -270,27 +279,36 @@ interface NormalizedSkillBundle {
   byPath: Map<string, BundleFile>;
 }
 
-interface BundleMetadata {
-  source: InstallMetadata["source"];
+interface ResolvedBundleMetadata {
+  source: InstalledMetadata["source"];
   sourceId?: string;
   version?: string;
+  cliVersion?: string;
+  revision?: string;
   provenance?: Record<string, string>;
 }
 
-export function directoryBundle(path: string): SkillBundle {
-  return { kind: "directory", path };
+export function directoryBundle(
+  path: string,
+  metadata?: BundledMetadata,
+): SkillBundle {
+  return { kind: "directory", path, metadata };
 }
 
-export function filesBundle(files: SkillFile[]): SkillBundle {
-  return { kind: "files", files };
+export function filesBundle(
+  files: SkillFile[],
+  metadata?: BundledMetadata,
+): SkillBundle {
+  return { kind: "files", files, metadata };
 }
 
 export async function moduleDirBundle(
   importMetaUrl: string | URL,
   relativePath: string,
+  metadata?: BundledMetadata,
 ): Promise<SkillBundle> {
   const root = fileURLToPath(new URL(relativePath, importMetaUrl));
-  return filesBundle(await readDirectoryBundleFiles(root));
+  return filesBundle(await readDirectoryBundleFiles(root), metadata);
 }
 
 export function githubBundle(options: GitHubBundleOptions): SkillBundle {
@@ -912,26 +930,30 @@ async function readSkillBundle(
 async function resolveSkillBundle(
   bundle: SkillBundle,
   cwd = process.cwd(),
-): Promise<{ bundle: NormalizedSkillBundle; metadata: BundleMetadata }> {
+): Promise<{
+  bundle: NormalizedSkillBundle;
+  metadata: ResolvedBundleMetadata;
+}> {
   if (bundle.kind === "directory") {
     const dir = resolvePath(bundle.path, cwd);
     return {
       bundle: normalizeSkillFiles(await readDirectoryBundleFiles(dir), dir),
-      metadata: { source: "bundled" },
+      metadata: resolvedBundledMetadata(bundle.metadata),
     };
   }
   if (bundle.kind === "files") {
     return {
       bundle: normalizeSkillFiles(bundle.files),
-      metadata: { source: "bundled" },
+      metadata: resolvedBundledMetadata(bundle.metadata),
     };
   }
   return resolveGitHubBundle(bundle.options);
 }
 
-async function resolveGitHubBundle(
-  options: GitHubBundleOptions,
-): Promise<{ bundle: NormalizedSkillBundle; metadata: BundleMetadata }> {
+async function resolveGitHubBundle(options: GitHubBundleOptions): Promise<{
+  bundle: NormalizedSkillBundle;
+  metadata: ResolvedBundleMetadata;
+}> {
   const root = trimGitHubPath(options.path);
   if (!options.owner || !options.repo || !root || !options.ref) {
     throw new Error("invalid github bundle");
@@ -983,6 +1005,33 @@ async function resolveGitHubBundle(
         resolvedCommit,
       },
     },
+  };
+}
+
+function resolvedBundledMetadata(
+  metadata: BundledMetadata | undefined,
+): ResolvedBundleMetadata {
+  if (!metadata) return { source: "bundled" };
+  for (const value of [
+    metadata.cliVersion,
+    metadata.revision,
+    metadata.sourceId,
+  ]) {
+    if (value !== undefined && typeof value !== "string") {
+      throw new Error("invalid bundled metadata");
+    }
+  }
+  if (metadata.provenance && !isStringRecord(metadata.provenance)) {
+    throw new Error("invalid bundled metadata");
+  }
+  return {
+    source: "bundled",
+    ...(metadata.cliVersion ? { cliVersion: metadata.cliVersion } : {}),
+    ...(metadata.revision ? { revision: metadata.revision } : {}),
+    ...(metadata.sourceId ? { sourceId: metadata.sourceId } : {}),
+    ...(metadata.provenance && Object.keys(metadata.provenance).length > 0
+      ? { provenance: metadata.provenance }
+      : {}),
   };
 }
 
@@ -1107,7 +1156,7 @@ async function installOrPlan(
 
   const cwd = options.cwd ?? process.cwd();
   let bundle: NormalizedSkillBundle;
-  let bundleMetadata: BundleMetadata;
+  let bundleMetadata: ResolvedBundleMetadata;
   try {
     ({ bundle, metadata: bundleMetadata } = await resolveSkillBundle(
       options.skillBundle,
@@ -1186,7 +1235,15 @@ async function installOrPlan(
       }
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
     } else if (metadata.value.hash === hash) {
-      if (await repairSkillBundleModes(bundle, target.targetDir, write)) {
+      const repaired = await repairSkillBundleModes(
+        bundle,
+        target.targetDir,
+        write,
+      );
+      if (
+        repaired ||
+        !installedMetadataMatchesBundle(metadata.value, bundleMetadata)
+      ) {
         if (write)
           await writeMetadata(
             target.targetDir,
@@ -1259,12 +1316,55 @@ export async function uninstallBundledSkill(
     } else if (metadata.value.appId !== options.appId) {
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
     } else {
-      await rm(target.targetDir, { recursive: true, force: true });
+      const reason = await removeManagedTarget(
+        target.targetDir,
+        options.appId,
+        options.skillName,
+      );
+      if (reason) {
+        report.conflicts.push({ ...result, reason });
+        continue;
+      }
       report.removed.push(result);
     }
   }
 
   return report;
+}
+
+async function removeManagedTarget(
+  targetDir: string,
+  appId: string,
+  skillName: string,
+): Promise<"unmanaged" | "owner-mismatch" | undefined> {
+  const quarantine = await makeStagingDir(targetDir);
+  await rm(quarantine, { recursive: true });
+  await rename(targetDir, quarantine);
+  const restore = async () => {
+    if (await exists(targetDir)) {
+      throw new Error(
+        `uninstall target changed; preserved quarantined target at ${quarantine}`,
+      );
+    }
+    await rename(quarantine, targetDir);
+  };
+  let metadata: InstalledMetadata | undefined;
+  try {
+    metadata = await readInstalledMetadata(quarantine);
+  } catch {
+    await restore();
+    return "unmanaged";
+  }
+  if (!metadata || metadata.skillName !== skillName) {
+    await restore();
+    return "unmanaged";
+  }
+  if (metadata.appId !== appId) {
+    await restore();
+    return "owner-mismatch";
+  }
+  await rm(quarantine, { recursive: true });
+  return undefined;
 }
 
 async function copyManagedSkill(
@@ -1273,7 +1373,7 @@ async function copyManagedSkill(
   appId: string,
   skillName: string,
   hash: string,
-  metadata: BundleMetadata,
+  metadata: ResolvedBundleMetadata,
 ) {
   const tmp = await makeStagingDir(targetDir);
   try {
@@ -1292,7 +1392,7 @@ async function replaceManagedSkill(
   appId: string,
   skillName: string,
   hash: string,
-  metadata: BundleMetadata,
+  metadata: ResolvedBundleMetadata,
 ) {
   const tmp = await makeStagingDir(targetDir);
   const backup = `${tmp}-backup`;
@@ -1361,9 +1461,9 @@ async function writeMetadata(
   appId: string,
   skillName: string,
   hash: string,
-  metadata: BundleMetadata,
+  metadata: ResolvedBundleMetadata,
 ) {
-  const value: InstallMetadata = {
+  const value: InstalledMetadata = {
     schemaVersion: 1,
     appId,
     skillName,
@@ -1372,6 +1472,8 @@ async function writeMetadata(
   };
   if (metadata.sourceId) value.sourceId = metadata.sourceId;
   if (metadata.version) value.version = metadata.version;
+  if (metadata.cliVersion) value.cliVersion = metadata.cliVersion;
+  if (metadata.revision) value.revision = metadata.revision;
   if (metadata.provenance) value.provenance = metadata.provenance;
   await writeFile(
     join(targetDir, ".kitup.json"),
@@ -1381,20 +1483,40 @@ async function writeMetadata(
 
 async function readMetadata(
   targetDir: string,
-): Promise<{ exists: boolean; value?: InstallMetadata }> {
+): Promise<{ exists: boolean; value?: InstalledMetadata }> {
   if (!(await exists(targetDir))) return { exists: false };
   try {
-    const raw = JSON.parse(
-      await readFile(join(targetDir, ".kitup.json"), "utf8"),
-    );
-    const value = parseOwnedMetadata(raw);
-    return value ? { exists: true, value } : { exists: true };
+    return {
+      exists: true,
+      value: await readInstalledMetadata(targetDir),
+    };
   } catch {
     return { exists: true };
   }
 }
 
-function parseOwnedMetadata(raw: unknown): InstallMetadata | undefined {
+export async function readInstalledMetadata(
+  targetDir: string,
+): Promise<InstalledMetadata | undefined> {
+  let data: string;
+  try {
+    data = await readFile(join(targetDir, ".kitup.json"), "utf8");
+  } catch (error: any) {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(data);
+  } catch {
+    throw new Error("invalid installed metadata");
+  }
+  const metadata = parseOwnedMetadata(raw);
+  if (!metadata) throw new Error("invalid installed metadata");
+  return metadata;
+}
+
+function parseOwnedMetadata(raw: unknown): InstalledMetadata | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const value = raw as Record<string, unknown>;
   if (value.schemaVersion !== 1) return undefined;
@@ -1405,19 +1527,66 @@ function parseOwnedMetadata(raw: unknown): InstallMetadata | undefined {
   if (value.source !== "bundled" && value.source !== "github") return undefined;
   if (typeof value.hash !== "string" || value.hash.length === 0)
     return undefined;
-  const metadata: InstallMetadata = {
+  const metadata: InstalledMetadata = {
     schemaVersion: 1,
     appId: value.appId,
     skillName: value.skillName,
     source: value.source,
     hash: value.hash,
   };
-  if (typeof value.sourceId === "string") metadata.sourceId = value.sourceId;
-  if (typeof value.version === "string") metadata.version = value.version;
-  if (value.provenance && typeof value.provenance === "object") {
-    metadata.provenance = value.provenance as Record<string, string>;
-  }
+  if (!optionalString(value.sourceId)) return undefined;
+  if (!optionalString(value.version)) return undefined;
+  if (!optionalString(value.cliVersion)) return undefined;
+  if (!optionalString(value.revision)) return undefined;
+  if (value.provenance !== undefined && !isStringRecord(value.provenance))
+    return undefined;
+  if (value.sourceId) metadata.sourceId = value.sourceId;
+  if (value.version) metadata.version = value.version;
+  if (value.cliVersion) metadata.cliVersion = value.cliVersion;
+  if (value.revision) metadata.revision = value.revision;
+  if (value.provenance) metadata.provenance = value.provenance;
   return metadata;
+}
+
+function optionalString(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === "string" && value.length > 0);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value as Record<string, unknown>).every(
+      (item) => typeof item === "string",
+    )
+  );
+}
+
+function installedMetadataMatchesBundle(
+  installed: InstalledMetadata,
+  bundled: ResolvedBundleMetadata,
+): boolean {
+  return (
+    installed.source === bundled.source &&
+    installed.sourceId === bundled.sourceId &&
+    installed.version === bundled.version &&
+    installed.cliVersion === bundled.cliVersion &&
+    installed.revision === bundled.revision &&
+    stringRecordsEqual(installed.provenance, bundled.provenance)
+  );
+}
+
+function stringRecordsEqual(
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined,
+): boolean {
+  const leftEntries = Object.entries(left ?? {});
+  const rightEntries = Object.entries(right ?? {});
+  return (
+    leftEntries.length === rightEntries.length &&
+    leftEntries.every(([key, value]) => right?.[key] === value)
+  );
 }
 
 function targetResult(target: TargetGroup): TargetResult {

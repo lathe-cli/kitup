@@ -7,8 +7,8 @@ flowchart TB
         BUNDLE["Bundle Resolver\nlocal · embedded · GitHub"]:::execution
         VALIDATE["Validator\nSKILL.md frontmatter"]:::execution
         HOST["Host Resolver\nids · aliases · detection · targets"]:::execution
-        INSTALL["Installer\nplan · conflict policy · copy · update · uninstall"]:::execution
-        REPORT["Reports\nInstallReport · UninstallReport"]:::execution
+        INSTALL["Lifecycle\nplan · copy · update · status · uninstall"]:::execution
+        REPORT["Reports\nInstallReport · StatusReport · UninstallReport"]:::execution
     end
 
     HOSTSPEC["Host Spec\nspec/hosts.json"]:::contract
@@ -18,7 +18,7 @@ flowchart TB
     VERIFY["Verification\ncheck.mjs · sync-hosts.mjs"]:::control
     GITHUB["GitHub API"]:::external
     TARGETS["Agent Host\nDirectory State"]:::state
-    METADATA[".kitup.json"]:::state
+    METADATA[".kitup.json\nownership · source · CLI build · provenance"]:::state
 
     AUTHOR -->|"provides flags"| WORKFLOW
     WORKFLOW --> BUNDLE
@@ -31,6 +31,7 @@ flowchart TB
     HOST --> INSTALL
     INSTALL -->|"copies, updates, removes"| TARGETS
     INSTALL -->|"writes .kitup.json"| METADATA
+    METADATA -->|"reads fail closed"| INSTALL
     INSTALL -->|"returns report"| REPORT
 
     SCHEMAS -.-> HOSTSPEC

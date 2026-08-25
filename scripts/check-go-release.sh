@@ -18,7 +18,9 @@ tar -C "$tmp/modules" -xf "$tmp/go-cobra.tar"
 )
 (
 	cd "$tmp/modules/go-cobra"
+	go mod edit "-replace=github.com/lathe-cli/kitup/go=$tmp/modules/go"
 	GOWORK=off go test ./...
+	go mod edit -dropreplace=github.com/lathe-cli/kitup/go
 )
 
 consumer="$tmp/consumer"

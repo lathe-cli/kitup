@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 try:
@@ -15,6 +15,7 @@ from ._github import fetch_github_directory
 from ._metadata import is_valid_skill_name
 from ._paths import normalize_bundle_path, resolve_path, skip_name
 from .types import (
+    BundledMetadata,
     BundleFile,
     GitHubBundleOptions,
     KitupError,
@@ -27,11 +28,13 @@ from .types import (
 @dataclass(frozen=True)
 class DirectoryBundle:
     path: str
+    metadata: BundledMetadata = field(default_factory=BundledMetadata)
 
 
 @dataclass(frozen=True)
 class FilesBundle:
     files: list[SkillFile]
+    metadata: BundledMetadata = field(default_factory=BundledMetadata)
 
 
 @dataclass(frozen=True)
@@ -42,18 +45,24 @@ class GitHubBundle:
 SkillBundle = DirectoryBundle | FilesBundle | GitHubBundle
 
 
-def directory_bundle(path: str) -> DirectoryBundle:
-    return DirectoryBundle(path=path)
+def directory_bundle(
+    path: str, metadata: BundledMetadata | None = None
+) -> DirectoryBundle:
+    return DirectoryBundle(path=path, metadata=metadata or BundledMetadata())
 
 
-def files_bundle(files: list[SkillFile]) -> FilesBundle:
-    return FilesBundle(files=files)
+def files_bundle(
+    files: list[SkillFile], metadata: BundledMetadata | None = None
+) -> FilesBundle:
+    return FilesBundle(files=files, metadata=metadata or BundledMetadata())
 
 
-def resources_bundle(root: Traversable) -> FilesBundle:
+def resources_bundle(
+    root: Traversable, metadata: BundledMetadata | None = None
+) -> FilesBundle:
     files: list[SkillFile] = []
     _collect_resource_files(root, "", files)
-    return files_bundle(files)
+    return files_bundle(files, metadata)
 
 
 def github_bundle(options: GitHubBundleOptions) -> GitHubBundle:

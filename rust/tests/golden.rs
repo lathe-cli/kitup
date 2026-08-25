@@ -1,11 +1,11 @@
 use kitup::{
     classify_install_workflow_exit, compute_bundle_content_hash, detect_hosts, directory_bundle,
     files_bundle, github_bundle, install_bundled_skill, load_host_spec, parse_install_flags,
-    plan_bundled_skill, resolve_hosts, resolve_install_selection,
+    plan_bundled_skill, read_installed_metadata, resolve_hosts, resolve_install_selection,
     run_bundled_skill_install_with_io, uninstall_bundled_skill, update_bundled_skill,
-    validate_skill_bundle, AgentSelector, BaseOptions, GitHubBundleOptions, InstallFlagValues,
-    InstallOptions, InstallSelectionOptions, InstallWorkflowOptions, ParsedInstallFlags, Scope,
-    SkillBundle, SkillFile, UninstallOptions,
+    validate_skill_bundle, with_bundle_metadata, AgentSelector, BaseOptions, BundledMetadata,
+    GitHubBundleOptions, InstallFlagValues, InstallOptions, InstallSelectionOptions,
+    InstallWorkflowOptions, ParsedInstallFlags, Scope, SkillBundle, SkillFile, UninstallOptions,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -113,6 +113,18 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
                 result.error_code.as_deref(),
                 case.expected.get("errorCode").and_then(Value::as_str)
             );
+        }
+        "read-installed-metadata" => {
+            let target = PathBuf::from(options["targetDir"].as_str().unwrap());
+            let result = read_installed_metadata(&target);
+            if case.expected.get("throws").and_then(Value::as_bool) == Some(true) {
+                assert!(result.is_err(), "expected metadata read to fail");
+            } else {
+                assert_json_eq(
+                    &serde_json::to_value(result.unwrap().unwrap()).unwrap(),
+                    case.expected["installedMetadata"].clone(),
+                );
+            }
         }
         "parse-install-flags" => {
             let parsed = parse_install_flags(InstallFlagValues {
@@ -622,21 +634,48 @@ fn agent_selector(value: &Value) -> AgentSelector {
 }
 
 fn skill_bundle_from_options(options: &Map<String, Value>) -> SkillBundle {
-    if let Some(files) = options.get("skillFiles").and_then(Value::as_array) {
-        return files_bundle(skill_files(files));
-    }
-    if let Some(dir) = options.get("skillBundleDir").and_then(Value::as_str) {
-        return directory_bundle(repo_path(dir));
-    }
-    if let Some(bundle) = options.get("githubBundle").and_then(Value::as_object) {
-        return github_bundle(GitHubBundleOptions {
+    let mut bundle = if let Some(files) = options.get("skillFiles").and_then(Value::as_array) {
+        files_bundle(skill_files(files))
+    } else if let Some(dir) = options.get("skillBundleDir").and_then(Value::as_str) {
+        directory_bundle(repo_path(dir))
+    } else if let Some(bundle) = options.get("githubBundle").and_then(Value::as_object) {
+        github_bundle(GitHubBundleOptions {
             owner: bundle["owner"].as_str().unwrap().to_string(),
             repo: bundle["repo"].as_str().unwrap().to_string(),
             path: bundle["path"].as_str().unwrap().to_string(),
             ref_name: bundle["ref"].as_str().unwrap().to_string(),
-        });
+        })
+    } else {
+        files_bundle(Vec::new())
+    };
+    if let Some(metadata) = options.get("bundleMetadata").and_then(Value::as_object) {
+        let provenance = metadata
+            .get("provenance")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_string()))
+            .collect();
+        bundle = with_bundle_metadata(
+            bundle,
+            BundledMetadata {
+                cli_version: metadata
+                    .get("cliVersion")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                revision: metadata
+                    .get("revision")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                source_id: metadata
+                    .get("sourceId")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                provenance,
+            },
+        );
     }
-    files_bundle(Vec::new())
+    bundle
 }
 
 fn skill_files(values: &[Value]) -> Vec<SkillFile> {

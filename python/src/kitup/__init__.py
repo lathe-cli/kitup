@@ -14,6 +14,7 @@ from .install import (
     uninstall_bundled_skill,
     update_bundled_skill,
 )
+from ._metadata import read_installed_metadata
 from .workflow import (
     agent_selector_from_flags,
     classify_install_workflow_exit,
@@ -27,11 +28,13 @@ from .workflow import (
 )
 from .types import (
     BaseOptions,
+    BundledMetadata,
     GitHubBundleOptions,
     Host,
     HostSpec,
     INSTALL_UX,
     InstallOptions,
+    InstalledMetadata,
     InstallReport,
     InstallSelection,
     InstallSelectionOptions,
@@ -51,11 +54,13 @@ from .types import (
 
 __all__ = [
     "BaseOptions",
+    "BundledMetadata",
     "GitHubBundleOptions",
     "Host",
     "HostSpec",
     "INSTALL_UX",
     "InstallOptions",
+    "InstalledMetadata",
     "InstallReport",
     "InstallSelection",
     "InstallSelectionOptions",
@@ -89,6 +94,7 @@ __all__ = [
     "resolve_hosts",
     "resolve_install_selection",
     "resolve_install_targets",
+    "read_installed_metadata",
     "run_bundled_skill_install",
     "run_bundled_skill_install_with_io",
     "uninstall_bundled_skill",

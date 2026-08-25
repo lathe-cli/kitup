@@ -168,6 +168,7 @@ function validateCases(cases, hosts) {
     "auto-host-detection-generic-path-only",
     "auto-host-detection-empty",
     "unchanged-noop",
+    "unchanged-content-refreshes-bundled-metadata",
     "unchanged-repairs-script-mode",
     "workflow-unchanged-silent",
     "workflow-conflict-exit",
@@ -180,6 +181,11 @@ function validateCases(cases, hosts) {
     "invalid-frontmatter",
     "nested-resources-copied",
     "embedded-skill-source",
+    "read-installed-metadata",
+    "read-installed-metadata-corrupt",
+    "read-installed-metadata-null-optional",
+    "read-installed-metadata-empty-optional",
+    "read-installed-metadata-null-provenance",
     "workflow-explicit-agent",
     "workflow-agent-star",
     "workflow-scope-prompt-before-agent",
@@ -200,7 +206,7 @@ function validateCases(cases, hosts) {
     "github-bundle-mode-only-update-refreshes-metadata",
     "github-bundle-dry-run",
     "github-bundle-resolve-failure",
-    "github-bundle-unchanged",
+    "github-bundle-metadata-refresh",
   ]) {
     assert(caseIds.has(id), `missing golden case: ${id}`);
   }

@@ -86,6 +86,16 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 		result := ValidateSkillBundle(skillBundleFromOptions(opts))
 		equal(t, result.Valid, tc.Expected["valid"])
 		equal(t, result.ErrorCode, tc.Expected["errorCode"])
+	case "read-installed-metadata":
+		meta, err := ReadInstalledMetadata(opts["targetDir"].(string))
+		if boolValue(tc.Expected["throws"]) {
+			if err == nil {
+				t.Fatal("expected metadata read to fail")
+			}
+			return
+		}
+		must(t, err)
+		equal(t, meta, tc.Expected["installedMetadata"])
 	case "parse-install-flags":
 		assertParsedFlags(t, ParseInstallFlags(InstallFlagValues{
 			Scope:    stringValue(opts["scope"]),
@@ -419,21 +429,40 @@ func agentSelector(value any) AgentSelector {
 }
 
 func skillBundleFromOptions(opts map[string]any) SkillBundle {
+	var bundle SkillBundle
 	if files, ok := opts["skillFiles"].([]any); ok {
-		return FilesBundle(skillFiles(files))
-	}
-	if dir, ok := opts["skillBundleDir"].(string); ok {
-		return DirectoryBundle(repoPathFromCase(dir))
-	}
-	if bundle, ok := opts["githubBundle"].(map[string]any); ok {
-		return GitHubBundle(GitHubBundleOptions{
-			Owner: bundle["owner"].(string),
-			Repo:  bundle["repo"].(string),
-			Path:  bundle["path"].(string),
-			Ref:   bundle["ref"].(string),
+		bundle = FilesBundle(skillFiles(files))
+	} else if dir, ok := opts["skillBundleDir"].(string); ok {
+		bundle = DirectoryBundle(repoPathFromCase(dir))
+	} else if github, ok := opts["githubBundle"].(map[string]any); ok {
+		bundle = GitHubBundle(GitHubBundleOptions{
+			Owner: github["owner"].(string),
+			Repo:  github["repo"].(string),
+			Path:  github["path"].(string),
+			Ref:   github["ref"].(string),
 		})
 	}
-	return SkillBundle{}
+	if metadata, ok := opts["bundleMetadata"].(map[string]any); ok {
+		bundle = WithBundleMetadata(bundle, BundledMetadata{
+			CLIVersion: stringValue(metadata["cliVersion"]),
+			Revision:   stringValue(metadata["revision"]),
+			SourceID:   stringValue(metadata["sourceId"]),
+			Provenance: stringMap(metadata["provenance"]),
+		})
+	}
+	return bundle
+}
+
+func stringMap(value any) map[string]string {
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for key, value := range raw {
+		out[key] = value.(string)
+	}
+	return out
 }
 
 func skillFiles(values []any) []SkillFile {

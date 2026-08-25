@@ -8,8 +8,8 @@ The core flow is:
 2. resolve safe target agent selection for CLI workflows
 3. validate `SKILL.md`
 4. copy, update, skip, or report conflicts
-5. write `.kitup.json` ownership metadata
-6. return a structured report
+5. write or read `.kitup.json` ownership and provenance metadata
+6. return a structured install, status, or uninstall report
 
 ## TypeScript
 
@@ -17,6 +17,7 @@ Package: `@kitup/sdk`
 
 ```ts
 import {
+  type BundledMetadata,
   detectHosts,
   directoryBundle,
   filesBundle,
@@ -27,6 +28,7 @@ import {
   installUxText,
   moduleDirBundle,
   planBundledSkill,
+  readInstalledMetadata,
   parseInstallFlags,
   classifyInstallWorkflowExit,
   resolveInstallSelection,
@@ -42,7 +44,12 @@ Primitive install call:
 ```ts
 const report = await installBundledSkill({
   appId: "mycli",
-  skillBundle: directoryBundle("./skills/mycli"),
+  skillBundle: directoryBundle("./skills/mycli", {
+    cliVersion: "1.2.3",
+    revision: "abc123",
+    sourceId: "mycli:embedded",
+    provenance: { build: "release" },
+  }),
   scope: "user",
 });
 ```
@@ -77,9 +84,9 @@ Implemented functions:
 - `resolveInstallTargets({ home?, cwd?, hostsFile?, agents?, scope, skillName })`
 - `validateSkillBundle(bundle, cwd?)`
 - `computeBundleContentHash(bundle, cwd?)`
-- `directoryBundle(path)`
-- `filesBundle(files)`
-- `moduleDirBundle(importMetaUrl, relativePath)`
+- `directoryBundle(path, metadata?)`
+- `filesBundle(files, metadata?)`
+- `moduleDirBundle(importMetaUrl, relativePath, metadata?)`
 - `githubBundle(options)`
 - `parseInstallFlags(flags)`
 - `agentSelectorFromFlags(values)`
@@ -92,6 +99,7 @@ Implemented functions:
 - `installBundledSkill(options)`
 - `updateBundledSkill(options)`
 - `uninstallBundledSkill(options)`
+- `readInstalledMetadata(targetDir)`
 - `installUxText`
 
 ## Go
@@ -107,7 +115,15 @@ Primitive install call:
 ```go
 report, err := kitup.InstallBundledSkill(kitup.InstallOptions{
 	AppID:       "mycli",
-	SkillBundle: kitup.DirectoryBundle("./skills/mycli"),
+	SkillBundle: kitup.WithBundleMetadata(
+		kitup.DirectoryBundle("./skills/mycli"),
+		kitup.BundledMetadata{
+			CLIVersion: "1.2.3",
+			Revision:   "abc123",
+			SourceID:   "mycli:embedded",
+			Provenance: map[string]string{"build": "release"},
+		},
+	),
 	Scope:       kitup.UserScope,
 })
 ```
@@ -140,6 +156,7 @@ Implemented functions:
 - `FSBundle(fsys, root)`
 - `FilesBundle(files)`
 - `GitHubBundle(opts)`
+- `WithBundleMetadata(bundle, metadata)`
 - `ParseInstallFlags(flags)`
 - `AgentSelectorFromFlags(values)`
 - `ParseScopeFlag(value)`
@@ -151,12 +168,16 @@ Implemented functions:
 - `InstallBundledSkill(opts)`
 - `UpdateBundledSkill(opts)`
 - `UninstallBundledSkill(opts)`
+- `StatusBundledSkill(opts)`
+- `ReadInstalledMetadata(targetDir)`
 - `InstallUX`
 
 Optional Cobra adapter module: `github.com/lathe-cli/kitup/go-cobra`
 
 - `NewSkillCommand(opts)`
 - `NewInstallCommand(opts)`
+- `NewStatusCommand(opts)`
+- `NewUninstallCommand(opts)`
 
 ## Rust
 
@@ -168,7 +189,15 @@ Primitive install call:
 let report = kitup::install_bundled_skill(&kitup::InstallOptions {
     base: kitup::BaseOptions::default(),
     app_id: "mycli".to_string(),
-    skill_bundle: kitup::directory_bundle("./skills/mycli"),
+    skill_bundle: kitup::with_bundle_metadata(
+        kitup::directory_bundle("./skills/mycli"),
+        kitup::BundledMetadata {
+            cli_version: Some("1.2.3".to_string()),
+            revision: Some("abc123".to_string()),
+            source_id: Some("mycli:embedded".to_string()),
+            provenance: [("build".to_string(), "release".to_string())].into(),
+        },
+    ),
     scope: kitup::Scope::User,
     agents: kitup::AgentSelector::Auto,
     force: false,
@@ -217,6 +246,7 @@ Implemented functions:
 - `files_bundle(files)`
 - `include_dir_bundle(dir)` with the `include-dir` feature
 - `github_bundle(options)`
+- `with_bundle_metadata(bundle, metadata)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`
 - `parse_scope_flag(value, errors)`
@@ -229,6 +259,7 @@ Implemented functions:
 - `install_bundled_skill(options)`
 - `update_bundled_skill(options)`
 - `uninstall_bundled_skill(options)`
+- `read_installed_metadata(target_dir)`
 - `INSTALL_UX`
 
 ## Python
@@ -238,6 +269,7 @@ Package: `kitup-sdk`
 ```python
 from kitup import (
     BaseOptions,
+    BundledMetadata,
     InstallOptions,
     InstallWorkflowOptions,
     classify_install_workflow_exit,
@@ -253,6 +285,7 @@ from kitup import (
     parse_install_flags,
     parse_scope_flag,
     plan_bundled_skill,
+    read_installed_metadata,
     resolve_hosts,
     resolve_install_selection,
     resolve_install_targets,
@@ -273,7 +306,15 @@ report = install_bundled_skill(
     InstallOptions(
         base=BaseOptions(),
         app_id="mycli",
-        skill_bundle=directory_bundle("./skills/mycli"),
+        skill_bundle=directory_bundle(
+            "./skills/mycli",
+            BundledMetadata(
+                cli_version="1.2.3",
+                revision="abc123",
+                source_id="mycli:embedded",
+                provenance={"build": "release"},
+            ),
+        ),
         scope="user",
     )
 )
@@ -322,9 +363,9 @@ Implemented functions:
 - `resolve_install_targets(options, agents, scope, skill_name)`
 - `validate_skill_bundle(bundle, cwd=None)`
 - `compute_bundle_content_hash(bundle, cwd=None)`
-- `directory_bundle(path)`
-- `files_bundle(files)`
-- `resources_bundle(root)`
+- `directory_bundle(path, metadata=None)`
+- `files_bundle(files, metadata=None)`
+- `resources_bundle(root, metadata=None)`
 - `github_bundle(options)`
 - `parse_install_flags(flags)`
 - `agent_selector_from_flags(values, errors)`
@@ -338,6 +379,7 @@ Implemented functions:
 - `install_bundled_skill(options)`
 - `update_bundled_skill(options)`
 - `uninstall_bundled_skill(options)`
+- `read_installed_metadata(target_dir)`
 - `INSTALL_UX`
 
 ## Options
@@ -360,6 +402,28 @@ The first non-local bundle constructor is GitHub only:
 - Rust: `github_bundle(GitHubBundleOptions { owner, repo, path, ref_name })`
 
 GitHub bundle resolution downloads only files under the configured directory path, requires `SKILL.md` at that bundle root, records the requested ref and resolved commit, and writes GitHub provenance into `.kitup.json`. It does not search GitHub, install dependencies, execute scripts, handle private auth, or install whole repositories by default.
+
+Bundled and embedded bundles can provide optional `cliVersion`, `revision`, `sourceId`, and string-valued `provenance`. These values describe the embedding CLI build and source; they do not change the skill content hash or ownership rules.
+
+Reinstalling an unchanged skill refreshes `.kitup.json` when these source or build fields changed, so status does not remain pinned to metadata from an older CLI release.
+
+## Installed metadata
+
+`InstalledMetadata` is public in all four SDKs. The reader APIs are `readInstalledMetadata`, `ReadInstalledMetadata`, and `read_installed_metadata`. A missing `.kitup.json` is reported as absent; malformed content, an unsupported schema, invalid ownership fields, or invalid optional field types is reported as an error.
+
+For a missing file, TypeScript returns `undefined`, Python returns `None`, Rust returns `Ok(None)`, and Go returns `ErrInstalledMetadataNotFound`. Go uses `ErrInvalidInstalledMetadata` for invalid content; the other SDKs use their standard invalid-data error mechanism.
+
+Optional string fields may be omitted, but when present they must be non-empty strings. `provenance` may be omitted, but when present it must be an object whose values are strings. Explicit `null` values fail closed in every SDK.
+
+The `.kitup.json` schema remains at `schemaVersion: 1`. Existing required fields remain unchanged:
+
+- `appId`, `skillName`: ownership identity
+- `source`: `bundled` or `github`
+- `hash`: installed bundle content hash
+
+The existing optional `sourceId`, `version`, and `provenance` fields remain compatible. `cliVersion` and `revision` are new optional fields. Older version 1 metadata remains readable without them.
+
+Install, update, status, and uninstall treat malformed metadata as unmanaged and fail closed. Uninstall moves a matching target to a same-parent quarantine path, revalidates its metadata after the move, and only then removes that exact tree. It restores a target that fails revalidation where safe. There is no implicit force behavior.
 
 The embedding CLI owns command names and framework attachment. `kitup` owns standard install flag semantics, selector mapping, user-facing workflow text, summary rendering, confirmation, dry-run planning, workflow exit classification, and execution. For user-facing commands, call `runBundledSkillInstall` / `RunBundledSkillInstall` / `run_bundled_skill_install` with values from the shared flag parsing helpers.
 
@@ -401,7 +465,13 @@ mycli skill install
 mycli skill install --scope user --agent codex
 mycli skill install --scope project --agent codex --agent claude-code
 mycli skill install --scope user --agent codex --force
+mycli skill status --scope user --agent codex --json
+mycli skill uninstall --scope user --agent codex --json
 ```
+
+The Go Cobra adapter provides `skill status` and `skill uninstall`. Both accept `--scope`, repeatable `--agent`, and optional `--json`, and reuse the same existing-compatible-directory-first target resolution as install. When `CurrentAgent` is set and `--agent` is omitted, both commands inspect the current agent and universal targets selected by install. Neither command exposes `--force`.
+
+Set Cobra `Options.SkillName` for lifecycle commands that must remain available when the original local, embedded, or GitHub bundle cannot be read. When it is omitted, the adapter derives the name by validating `Options.Bundle` for backward compatibility.
 
 The lower-level selection resolver remains available for custom shells. It returns one of:
 
@@ -439,7 +509,14 @@ Uninstall reports include:
 - `conflicts`
 - `errors`
 
-TypeScript returns typed report objects. Go exposes `InstallReport`, `UninstallReport`, `TargetResult`, `TargetStatus`, and `ReportError`. Rust exposes `InstallReport`, `UninstallReport`, `TargetResult`, `TargetStatus`, and `ReportError`.
+Go status reports include:
+
+- `installed`, with an `InstalledMetadata` object for each target
+- `missing`
+- `conflicts`
+- `errors`
+
+TypeScript returns typed report objects. Go exposes `InstallReport`, `StatusReport`, `UninstallReport`, `InstalledMetadata`, `TargetResult`, `TargetStatus`, and `ReportError`. Rust exposes `InstallReport`, `UninstallReport`, `InstalledMetadata`, `TargetResult`, `TargetStatus`, and `ReportError`. Python exposes the same installed metadata fields as `InstalledMetadata`.
 
 The serialized JSON report shape is the same across TypeScript, Go, and Rust. `installed`, `updated`, and `removed` contain target results. `skipped` and `conflicts` contain target results plus `reason`.
 
