@@ -26,6 +26,7 @@ import {
   planBundledSkill,
   parseInstallFlags,
   resolveInstallSelection,
+  resolveInstallTargets,
   resolveHosts,
   runBundledSkillInstall,
   uninstallBundledSkill,
@@ -174,6 +175,22 @@ async function runCase(testCase: any, home: string, workspace: string) {
       hostsFile,
     });
     assertSelection(selection, testCase.expected.selection);
+    return;
+  }
+
+  if (testCase.operation === "resolve-install-targets") {
+    const result = await resolveInstallTargets({
+      home,
+      cwd: workspace,
+      hostsFile,
+      agents: options.agents,
+      scope: options.scope,
+      skillName: options.skillName,
+    });
+    assert.deepEqual(
+      result.targets,
+      expandValue(testCase.expected.targets, home, workspace),
+    );
     return;
   }
 

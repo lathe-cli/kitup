@@ -33,6 +33,15 @@ function shouldRun(group) {
   return selectedGroups.size === 0 || selectedGroups.has(group);
 }
 
+const genericDetectPaths = new Set([
+  "~/.agents",
+  "~/.agents/skills",
+  "~/.config/agents",
+  ".agents",
+  ".agents/skills",
+  "package.json",
+]);
+
 function validateHosts(spec, schema) {
   assert(spec.schemaVersion === 1, "hosts schemaVersion must be 1");
   assert(Array.isArray(spec.hosts), "hosts must be an array");
@@ -44,6 +53,7 @@ function validateHosts(spec, schema) {
     "../outside",
     "..\\outside",
     "C:/outside",
+    "a/./b",
     "a//b",
     "a/",
   ]) {
@@ -53,6 +63,7 @@ function validateHosts(spec, schema) {
     "~/../outside",
     "~/..\\outside",
     "~/C:/outside",
+    "~/a/./b",
     "~//a",
     "~/a/",
   ]) {
@@ -100,10 +111,18 @@ function validateHosts(spec, schema) {
       Array.isArray(host.detect) && host.detect.length > 0,
       `missing detect paths: ${host.id}`,
     );
+    const installDirs = new Set([
+      ...host.projectSkillsDirs,
+      ...host.userSkillsDirs,
+    ]);
     for (const path of host.detect) {
       assert(
         homePattern.test(path) || projectPattern.test(path),
         `bad detect path for ${host.id}: ${path}`,
+      );
+      assert(
+        genericDetectPaths.has(path) || !installDirs.has(path),
+        `detect path is an install target for ${host.id}: ${path}`,
       );
     }
 
@@ -117,6 +136,28 @@ function validateHosts(spec, schema) {
       assert(!ids.has(alias), `alias conflicts with host id: ${alias}`);
       assert(!aliases.has(alias), `duplicate alias: ${alias}`);
       aliases.add(alias);
+    }
+  }
+
+  const installSurface = (host) =>
+    JSON.stringify([...host.projectSkillsDirs, ...host.userSkillsDirs].sort());
+  const primaryDetect = new Map();
+  for (const host of spec.hosts) {
+    const primary = host.detect[0];
+    if (!primary || genericDetectPaths.has(primary)) continue;
+    if (!primaryDetect.has(primary)) primaryDetect.set(primary, []);
+    primaryDetect.get(primary).push(host);
+  }
+  for (const host of spec.hosts) {
+    for (const path of host.detect) {
+      if (genericDetectPaths.has(path)) continue;
+      for (const owner of primaryDetect.get(path) || []) {
+        assert(
+          owner.id === host.id ||
+            installSurface(owner) === installSurface(host),
+          `detect path for ${host.id} belongs to ${owner.id}: ${path}`,
+        );
+      }
     }
   }
 
@@ -159,11 +200,19 @@ function validateCases(cases, hosts) {
     "user-scope-install",
     "codex-user-scope-prefers-first-user-dir",
     "project-scope-install",
+    "codex-user-scope-reuses-existing-compatible-dir",
+    "codex-user-scope-ignores-compatible-file",
+    "update-prefers-owned-compatible-target",
+    "resolve-targets-prefers-owned-compatible-target",
+    "uninstall-prefers-owned-compatible-target",
     "project-scope-plan",
     "project-only-host-project-scope-install",
     "project-only-host-user-scope-error",
     "auto-host-detection",
     "auto-host-detection-empty",
+    "auto-host-detection-secondary-path",
+    "auto-host-detection-ignores-generic-paths",
+    "auto-host-detection-ignores-generic-agent-dir",
     "unchanged-noop",
     "unchanged-repairs-script-mode",
     "workflow-unchanged-silent",
@@ -173,6 +222,10 @@ function validateCases(cases, hosts) {
     "different-owner-conflict",
     "uninstall-owned-skill",
     "uninstall-owner-mismatch",
+    "uninstall-removes-all-owned-compatible-targets",
+    "uninstall-rejects-boolean-schema-version",
+    "hosts-file-rejects-self-detect-install-path",
+    "hosts-file-rejects-dot-segment-alias",
     "missing-skill-md",
     "invalid-frontmatter",
     "nested-resources-copied",
@@ -267,6 +320,19 @@ function validateVersions() {
   );
 }
 
+function validateGoModules() {
+  for (const path of ["go/go.mod", "go-cobra/go.mod"]) {
+    assert(
+      !/^replace\s/m.test(readText(path)),
+      `${path} must not contain a replace directive`,
+    );
+  }
+  assert(
+    /^use \(/m.test(readText("go.work")),
+    "go.work must list the workspace modules",
+  );
+}
+
 function validateReleaseWorkflow() {
   const workflow = readText(".github/workflows/release.yml");
   assert(
@@ -305,6 +371,7 @@ const { ids, aliases } = validateHosts(hostsSpec, hostsSchema);
 validateCases(cases, hostsSpec.hosts);
 validateFixtures();
 validateVersions();
+validateGoModules();
 validateReleaseWorkflow();
 
 assert(ids.has("kimi-cli"), "kimi-cli must be canonical");
@@ -345,25 +412,13 @@ for (const [group, name, command, args, cwd, env] of [
       "test",
       "../examples/ts/cli.ts",
       "../scripts/check.mjs",
+      "../scripts/check-go-modules.mjs",
       "../scripts/prepare-release.mjs",
     ],
     rootPath,
   ],
   ["typescript", "typescript", "pnpm", ["--dir", "ts", "test"], rootPath],
-  [
-    "go",
-    "go",
-    "go",
-    ["test", "-count=1", "./..."],
-    new URL("../go/", import.meta.url),
-  ],
-  [
-    "go",
-    "go-cobra",
-    "go",
-    ["test", "./..."],
-    new URL("../go-cobra/", import.meta.url),
-  ],
+  ["go", "go-modules", "node", ["scripts/check-go-modules.mjs"], rootPath],
   ["rust", "rust", "cargo", ["test"], new URL("../rust/", import.meta.url)],
   [
     "rust",

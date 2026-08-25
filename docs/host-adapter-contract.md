@@ -8,12 +8,14 @@ Each host entry describes where a local Agent Skill can be installed and how the
 
 `projectSkillsDirs` and `userSkillsDirs` are ordered.
 
-The first path is the canonical install target for that host. Later paths are compatible discovery roots that the host also scans. SDKs should install to the first path unless a caller explicitly requests another supported path.
+The first path is the canonical install target for that host. Later paths are compatible discovery roots that the host also scans. SDKs keep using a configured path that already contains a valid kitup-owned target for the same skill; normal ownership checks still decide whether the requesting app may update or remove it. Otherwise, SDKs reuse the first configured path that exists as a directory or install to the first path when none exist. Regular files do not count as compatible install directories.
 
 Project paths must be relative paths. User paths must be home-relative paths beginning with `~/`.
-All adapter paths use `/` separators and non-empty segments; `..`, backslashes, colons, and NUL bytes are invalid.
+All adapter paths use `/` separators and non-empty segments; `.`, `..`, backslashes, colons, and NUL bytes are invalid.
 
 If multiple selected hosts resolve to the same target directory, SDKs must copy once and associate that installed target with every matching host. Shared roots such as `.agents/skills` are common and should not produce duplicate writes.
+
+Uninstall removes every valid kitup-owned copy for the requested `appId` and skill across the selected hosts' configured paths. This cleans up duplicate owned copies left by earlier target selection while preserving unmanaged and other-owner directories.
 
 ## Aliases
 
@@ -25,7 +27,15 @@ Aliases are for ecosystem compatibility only. SDK result objects should return t
 
 `detect` is only a default selector for `agents: "auto"`.
 
-Detection should check path existence. Entries may be home-relative paths such as `~/.codex` or project-relative paths such as `.replit`.
+Detection checks path existence across every `detect` entry: a host is detected when any of its non-generic entries exists. Entries may be home-relative paths such as `~/.codex` or project-relative paths such as `.replit`.
+
+Every `detect` entry must be evidence that this specific host is present:
+
+- Generic shared roots (`~/.agents`, `~/.agents/skills`, `~/.config/agents`, `.agents`, `.agents/skills`, `package.json`) never count as evidence and are ignored by detection.
+- An entry must not be one of the host's own install directories — a kitup install would create that directory itself and turn into next run's false detection evidence.
+- An entry must not point at another host's namespace; a host that scans other tools' skill directories expresses that through `projectSkillsDirs`/`userSkillsDirs` compatibility paths, not through `detect`. Hosts that share their entire install surface (one product namespace) may share detection evidence.
+
+SDK host-spec loaders reject non-generic detection paths that duplicate the same host's install directories, including in custom `hostsFile` overrides. `scripts/check.mjs` also enforces cross-host ownership for the canonical adapter table.
 
 Detection must not run host binaries, start editors, mutate configuration, or require network access.
 

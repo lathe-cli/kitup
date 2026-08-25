@@ -472,6 +472,12 @@ pub fn load_host_spec(hosts_file: Option<&Path>) -> io::Result<Vec<Host>> {
 
 fn validate_host_spec(hosts: &[Host]) -> io::Result<()> {
     for host in hosts {
+        let install_dirs: HashSet<&str> = host
+            .project_skills_dirs
+            .iter()
+            .chain(&host.user_skills_dirs)
+            .map(String::as_str)
+            .collect();
         for path in &host.project_skills_dirs {
             if !is_project_host_path(path) {
                 return Err(io::Error::new(
@@ -495,6 +501,15 @@ fn validate_host_spec(hosts: &[Host]) -> io::Result<()> {
                     format!("invalid detect path {path:?} for host {}", host.id),
                 ));
             }
+            if !is_generic_detect_path(path) && install_dirs.contains(path.as_str()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "detect path is an install target for host {}: {path:?}",
+                        host.id
+                    ),
+                ));
+            }
         }
     }
     Ok(())
@@ -514,7 +529,7 @@ fn is_safe_host_path(path: &str) -> bool {
         .any(|character| matches!(character, '\0' | '\\' | ':'))
         && !path
             .split('/')
-            .any(|segment| segment == ".." || segment.is_empty())
+            .any(|segment| segment == "." || segment == ".." || segment.is_empty())
 }
 
 pub fn resolve_hosts(agents: &AgentSelector, hosts: &[Host]) -> (Vec<Host>, Vec<Value>) {
@@ -551,10 +566,10 @@ pub fn detect_hosts(options: &BaseOptions, scope: Option<Scope>) -> io::Result<V
     let (home, cwd) = defaults(options)?;
     let mut detected = Vec::new();
     for host in hosts {
-        if let Some(path) = host.detect.first() {
-            if !is_generic_detect_path(path) && expand_host_path(path, &home, &cwd).exists() {
-                detected.push(host);
-            }
+        if host.detect.iter().any(|path| {
+            !is_generic_detect_path(path) && expand_host_path(path, &home, &cwd).exists()
+        }) {
+            detected.push(host);
         }
     }
     if let Some(scope) = scope {
@@ -662,6 +677,16 @@ pub fn resolve_install_targets(
     scope: Scope,
     skill_name: &str,
 ) -> io::Result<(Vec<TargetGroup>, Vec<Value>, Vec<String>)> {
+    resolve_install_targets_for_lifecycle(options, agents, scope, skill_name, None)
+}
+
+fn resolve_install_targets_for_lifecycle(
+    options: &BaseOptions,
+    agents: &AgentSelector,
+    scope: Scope,
+    skill_name: &str,
+    uninstall_app_id: Option<&str>,
+) -> io::Result<(Vec<TargetGroup>, Vec<Value>, Vec<String>)> {
     if !valid_skill_name(skill_name) {
         return Ok((
             vec![],
@@ -680,24 +705,33 @@ pub fn resolve_install_targets(
     };
     let mut by_target: BTreeMap<PathBuf, TargetGroup> = BTreeMap::new();
     for host in selected {
-        if let Some(root) = choose_scope_path(&host, scope, &home, &cwd) {
-            let target_dir = root.join(skill_name);
-            by_target
-                .entry(target_dir.clone())
-                .or_insert_with(|| TargetGroup {
-                    host_ids: Vec::new(),
-                    skill_name: skill_name.to_string(),
-                    target_dir,
-                })
-                .host_ids
-                .push(host.id);
-        } else {
+        let roots = match uninstall_app_id {
+            Some(app_id) => uninstall_scope_paths(&host, scope, &home, &cwd, skill_name, app_id),
+            None => choose_scope_path(&host, scope, &home, &cwd, skill_name)
+                .into_iter()
+                .collect(),
+        };
+        if roots.is_empty() {
             errors.push(json!({
                 "hostId": host.id,
                 "skillName": skill_name,
                 "scope": scope_text(scope),
                 "reason": "unsupported-scope"
             }));
+        } else {
+            for root in roots {
+                let target_dir = root.join(skill_name);
+                let group = by_target
+                    .entry(target_dir.clone())
+                    .or_insert_with(|| TargetGroup {
+                        host_ids: Vec::new(),
+                        skill_name: skill_name.to_string(),
+                        target_dir,
+                    });
+                if !group.host_ids.contains(&host.id) {
+                    group.host_ids.push(host.id.clone());
+                }
+            }
         }
     }
     let targets: Vec<_> = by_target.into_values().collect();
@@ -989,11 +1023,12 @@ pub fn uninstall_bundled_skill(options: &UninstallOptions) -> io::Result<Uninsta
             "reason": "invalid-app-id"
         })]));
     }
-    let (targets, errors, _) = resolve_install_targets(
+    let (targets, errors, _) = resolve_install_targets_for_lifecycle(
         &options.base,
         &options.agents,
         options.scope,
         &options.skill_name,
+        Some(&options.app_id),
     )?;
     let mut report = uninstall_report(errors);
     for target in targets {
@@ -1580,15 +1615,56 @@ fn canonical_scope_path(host: &Host, scope: Scope, home: &Path, cwd: &Path) -> O
     paths.first().map(|path| expand_host_path(path, home, cwd))
 }
 
-fn choose_scope_path(host: &Host, scope: Scope, home: &Path, cwd: &Path) -> Option<PathBuf> {
+fn choose_scope_path(
+    host: &Host,
+    scope: Scope,
+    home: &Path,
+    cwd: &Path,
+    skill_name: &str,
+) -> Option<PathBuf> {
     let paths = scope_paths(host, scope);
-    for path in paths {
-        let expanded = expand_host_path(path, home, cwd);
-        if expanded.exists() {
-            return Some(expanded);
+    let existing: Vec<_> = paths
+        .iter()
+        .map(|path| expand_host_path(path, home, cwd))
+        .filter(|path| path.is_dir())
+        .collect();
+    for root in &existing {
+        if let MetadataState::Managed(metadata) = read_metadata(&root.join(skill_name)) {
+            if metadata.skill_name == skill_name {
+                return Some(root.clone());
+            }
         }
     }
+    if let Some(root) = existing.into_iter().next() {
+        return Some(root);
+    }
     paths.first().map(|path| expand_host_path(path, home, cwd))
+}
+
+fn uninstall_scope_paths(
+    host: &Host,
+    scope: Scope,
+    home: &Path,
+    cwd: &Path,
+    skill_name: &str,
+    app_id: &str,
+) -> Vec<PathBuf> {
+    let owned: Vec<_> = scope_paths(host, scope)
+        .iter()
+        .map(|path| expand_host_path(path, home, cwd))
+        .filter(|root| match read_metadata(&root.join(skill_name)) {
+            MetadataState::Managed(metadata) => {
+                metadata.skill_name == skill_name && metadata.app_id == app_id
+            }
+            _ => false,
+        })
+        .collect();
+    if !owned.is_empty() {
+        return owned;
+    }
+    choose_scope_path(host, scope, home, cwd, skill_name)
+        .into_iter()
+        .collect()
 }
 
 fn scope_paths(host: &Host, scope: Scope) -> &[String] {
@@ -1958,7 +2034,15 @@ fn skip_name(name: &str) -> bool {
 }
 
 fn is_generic_detect_path(path: &str) -> bool {
-    path == "~/.agents" || path == "~/.agents/skills" || path == "~/.config/agents"
+    matches!(
+        path,
+        "~/.agents"
+            | "~/.agents/skills"
+            | "~/.config/agents"
+            | ".agents"
+            | ".agents/skills"
+            | "package.json"
+    )
 }
 
 fn scope_text(scope: Scope) -> &'static str {

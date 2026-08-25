@@ -1,7 +1,7 @@
 use kitup::{
     classify_install_workflow_exit, compute_bundle_content_hash, detect_hosts, directory_bundle,
     files_bundle, github_bundle, install_bundled_skill, load_host_spec, parse_install_flags,
-    plan_bundled_skill, resolve_hosts, resolve_install_selection,
+    plan_bundled_skill, resolve_hosts, resolve_install_selection, resolve_install_targets,
     run_bundled_skill_install_with_io, uninstall_bundled_skill, update_bundled_skill,
     validate_skill_bundle, AgentSelector, BaseOptions, GitHubBundleOptions, InstallFlagValues,
     InstallOptions, InstallSelectionOptions, InstallWorkflowOptions, ParsedInstallFlags, Scope,
@@ -172,6 +172,32 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
             assert_selection(
                 serde_json::to_value(selection).unwrap(),
                 case.expected["selection"].clone(),
+            );
+        }
+        "resolve-install-targets" => {
+            let base = case_base_options(options, home, workspace);
+            let (targets, _, _) = resolve_install_targets(
+                &base,
+                &agent_selector(&options["agents"]),
+                scope(options["scope"].as_str().unwrap()),
+                options["skillName"].as_str().unwrap(),
+            )
+            .unwrap();
+            let actual = Value::Array(
+                targets
+                    .into_iter()
+                    .map(|target| {
+                        json!({
+                            "hostIds": target.host_ids,
+                            "skillName": target.skill_name,
+                            "targetDir": target.target_dir,
+                        })
+                    })
+                    .collect(),
+            );
+            assert_json_eq(
+                &actual,
+                expand_value(&case.expected["targets"], home, workspace),
             );
         }
         "run-install-workflow" => {

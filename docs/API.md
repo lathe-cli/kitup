@@ -415,12 +415,13 @@ In TTY mode, zero detected hosts prompts from all supported hosts. One detected 
 
 Selector semantics:
 
-- `scope: "user"` installs into the first `userSkillsDirs` path for each host.
-- `scope: "project"` installs into the first `projectSkillsDirs` path for each host.
-- `agents: "auto"` uses host detection.
+- `scope: "user"` keeps a valid kitup-owned target for the same skill on its configured path; normal ownership checks still decide whether the requesting app may mutate it. Otherwise, it reuses the first `userSkillsDirs` path that exists as a directory or falls back to the first configured path.
+- `scope: "project"` keeps a valid kitup-owned target for the same skill on its configured path; normal ownership checks still decide whether the requesting app may mutate it. Otherwise, it reuses the first `projectSkillsDirs` path that exists as a directory or falls back to the first configured path.
+- `agents: "auto"` detects a host when any of its non-generic detection paths exists; shared roots such as `.agents` do not identify a host by themselves.
 - `agents: "*"` selects every host adapter.
 - explicit agents select canonical host ids or aliases.
 - hosts without a path for the selected scope return an `unsupported-scope` error.
+- uninstall removes every valid kitup-owned copy for the requested `appId` and skill across the selected hosts' configured paths; unmanaged and other-owner directories are never removed.
 
 ## Reports
 

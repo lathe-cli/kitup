@@ -4,7 +4,14 @@ from pathlib import Path
 from ._hosts_generated import DEFAULT_HOSTS_SPEC_JSON
 from .types import BaseOptions, Host, HostSpec, KitupError, Scope
 
-_GENERIC_DETECT_PATHS = {"~/.agents", "~/.agents/skills", "~/.config/agents"}
+_GENERIC_DETECT_PATHS = {
+    "~/.agents",
+    "~/.agents/skills",
+    "~/.config/agents",
+    ".agents",
+    ".agents/skills",
+    "package.json",
+}
 
 
 def load_host_spec(hosts_file: str | None = None) -> HostSpec:
@@ -33,6 +40,7 @@ def load_host_spec(hosts_file: str | None = None) -> HostSpec:
 
 def _validate_host_spec(hosts: list[Host]) -> None:
     for host in hosts:
+        install_dirs = set(host.project_skills_dirs + host.user_skills_dirs)
         for path in host.project_skills_dirs:
             if not _is_project_host_path(path):
                 raise KitupError(f"invalid project path {path!r} for host {host.id}")
@@ -42,6 +50,10 @@ def _validate_host_spec(hosts: list[Host]) -> None:
         for path in host.detect:
             if not _is_home_host_path(path) and not _is_project_host_path(path):
                 raise KitupError(f"invalid detect path {path!r} for host {host.id}")
+            if path not in _GENERIC_DETECT_PATHS and path in install_dirs:
+                raise KitupError(
+                    f"detect path is an install target for host {host.id}: {path!r}"
+                )
 
 
 def _is_project_host_path(path: str) -> bool:
@@ -59,7 +71,7 @@ def _is_home_host_path(path: str) -> bool:
 
 def _is_safe_host_path(path: str) -> bool:
     return not any(character in path for character in "\0\\:") and not any(
-        segment in ("..", "") for segment in path.split("/")
+        segment in (".", "..", "") for segment in path.split("/")
     )
 
 
@@ -99,7 +111,7 @@ def detect_hosts(options: BaseOptions, scope: Scope | None = None) -> list[Host]
     cwd = Path(options.cwd) if options.cwd else Path.cwd()
     detected: list[Host] = []
     for host in spec.hosts:
-        if _primary_detect_path_exists(host, home=home, cwd=cwd):
+        if _detect_path_exists(host, home=home, cwd=cwd):
             detected.append(host)
 
     if scope is not None:
@@ -121,13 +133,12 @@ def _canonical_scope_path(
     return _expand_host_path(paths[0], home=home, cwd=cwd)
 
 
-def _primary_detect_path_exists(host: Host, *, home: Path, cwd: Path) -> bool:
-    if not host.detect:
-        return False
-    path = host.detect[0]
-    if path in _GENERIC_DETECT_PATHS:
-        return False
-    return _expand_host_path(path, home=home, cwd=cwd).exists()
+def _detect_path_exists(host: Host, *, home: Path, cwd: Path) -> bool:
+    return any(
+        _expand_host_path(path, home=home, cwd=cwd).exists()
+        for path in host.detect
+        if path not in _GENERIC_DETECT_PATHS
+    )
 
 
 def _expand_host_path(path: str, *, home: Path, cwd: Path) -> Path:

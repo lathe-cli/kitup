@@ -48,6 +48,7 @@
             "plan",
             "run-install-workflow",
             "resolve-install-selection",
+            "resolve-install-targets",
             "resolve-hosts",
             "update",
             "uninstall",
