@@ -551,10 +551,10 @@ pub fn detect_hosts(options: &BaseOptions, scope: Option<Scope>) -> io::Result<V
     let (home, cwd) = defaults(options)?;
     let mut detected = Vec::new();
     for host in hosts {
-        if let Some(path) = host.detect.first() {
-            if !is_generic_detect_path(path) && expand_host_path(path, &home, &cwd).exists() {
-                detected.push(host);
-            }
+        if host.detect.iter().any(|path| {
+            !is_generic_detect_path(path) && expand_host_path(path, &home, &cwd).exists()
+        }) {
+            detected.push(host);
         }
     }
     if let Some(scope) = scope {
@@ -1958,7 +1958,10 @@ fn skip_name(name: &str) -> bool {
 }
 
 fn is_generic_detect_path(path: &str) -> bool {
-    path == "~/.agents" || path == "~/.agents/skills" || path == "~/.config/agents"
+    path == "~/.agents"
+        || path == "~/.agents/skills"
+        || path == "~/.config/agents"
+        || path == "package.json"
 }
 
 fn scope_text(scope: Scope) -> &'static str {

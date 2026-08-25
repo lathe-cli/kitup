@@ -504,11 +504,11 @@ func DetectHosts(opts BaseOptions, scope Scope) ([]Host, error) {
 	home, cwd := defaults(opts)
 	detected := []Host{}
 	for _, host := range hosts {
-		if len(host.Detect) == 0 || isGenericDetectPath(host.Detect[0]) {
-			continue
-		}
-		if exists(expandHostPath(host.Detect[0], home, cwd)) {
-			detected = append(detected, host)
+		for _, detectPath := range host.Detect {
+			if !isGenericDetectPath(detectPath) && exists(expandHostPath(detectPath, home, cwd)) {
+				detected = append(detected, host)
+				break
+			}
 		}
 	}
 	if scope == "" {
@@ -1687,7 +1687,7 @@ func skipName(name string) bool {
 }
 
 func isGenericDetectPath(path string) bool {
-	return path == "~/.agents" || path == "~/.agents/skills" || path == "~/.config/agents"
+	return path == "~/.agents" || path == "~/.agents/skills" || path == "~/.config/agents" || path == "package.json"
 }
 
 func exists(path string) bool {

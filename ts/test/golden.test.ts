@@ -221,6 +221,7 @@ async function runCase(testCase: any, home: string, workspace: string) {
       testCase.expected.detectedHosts,
     );
   }
+  if (testCase.operation === "detect") return;
 
   const reportPromise =
     testCase.operation === "uninstall"

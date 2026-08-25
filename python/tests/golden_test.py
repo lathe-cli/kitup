@@ -138,6 +138,8 @@ def run_case(case, home: Path, workspace: Path) -> None:
             case["options"]["scope"],
         )
         assert [host.id for host in hosts] == case["expected"]["detectedHosts"]
+    if operation == "detect":
+        return
 
     if case["expected"].get("throws"):
         try:

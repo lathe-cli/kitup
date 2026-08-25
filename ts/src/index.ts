@@ -488,13 +488,14 @@ export async function detectHosts(
   const detected: Host[] = [];
 
   for (const host of spec.hosts) {
-    const detectPath = host.detect[0];
-    if (
-      detectPath &&
-      !isGenericDetectPath(detectPath) &&
-      (await exists(expandHostPath(detectPath, home, cwd)))
-    ) {
-      detected.push(host);
+    for (const detectPath of host.detect) {
+      if (
+        !isGenericDetectPath(detectPath) &&
+        (await exists(expandHostPath(detectPath, home, cwd)))
+      ) {
+        detected.push(host);
+        break;
+      }
     }
   }
 
@@ -1690,7 +1691,8 @@ function isGenericDetectPath(path: string) {
   return (
     path === "~/.agents" ||
     path === "~/.agents/skills" ||
-    path === "~/.config/agents"
+    path === "~/.config/agents" ||
+    path === "package.json"
   );
 }
 

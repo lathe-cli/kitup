@@ -75,7 +75,7 @@ Host support is data-first.
 
 - Put paths and aliases in `spec/hosts.json` whenever possible.
 - Do not add host-specific branching unless the generic resolver cannot express the host.
-- `projectSkillsDirs` and `userSkillsDirs` are ordered; the first path is the canonical install target.
+- `projectSkillsDirs` and `userSkillsDirs` are ordered; reuse the first existing compatible path, or fall back to the first canonical path.
 - Project paths must be relative. User paths must start with `~/`.
 - A host may be project-only or user-only.
 - Multiple selected hosts may resolve to the same target directory; copy once and report all matching hosts.

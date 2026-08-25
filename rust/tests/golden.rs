@@ -272,6 +272,9 @@ fn run_case(case: &GoldenCase, home: &Path, workspace: &Path) {
                     detect_hosts(&base, Some(scope(options["scope"].as_str().unwrap()))).unwrap();
                 assert_json_eq(&json!(host_ids(&hosts)), expected.clone());
             }
+            if case.operation == "detect" {
+                return;
+            }
             let result = run_report_case(case, options, base);
             if case.expected.get("throws").and_then(Value::as_bool) == Some(true) {
                 assert!(result.is_err(), "expected operation to throw");

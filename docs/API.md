@@ -415,8 +415,8 @@ In TTY mode, zero detected hosts prompts from all supported hosts. One detected 
 
 Selector semantics:
 
-- `scope: "user"` installs into the first `userSkillsDirs` path for each host.
-- `scope: "project"` installs into the first `projectSkillsDirs` path for each host.
+- `scope: "user"` reuses the first existing `userSkillsDirs` path, or creates the first canonical path when none exist.
+- `scope: "project"` reuses the first existing `projectSkillsDirs` path, or creates the first canonical path when none exist.
 - `agents: "auto"` uses host detection.
 - `agents: "*"` selects every host adapter.
 - explicit agents select canonical host ids or aliases.

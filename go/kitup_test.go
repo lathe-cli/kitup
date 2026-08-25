@@ -145,6 +145,9 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 			must(t, err)
 			equal(t, hostIDs(hosts), expected)
 		}
+		if tc.Operation == "detect" {
+			return
+		}
 		report, err := runReportCase(t, tc, opts, base)
 		if throws, ok := tc.Expected["throws"].(bool); ok && throws {
 			if err == nil {

@@ -398,9 +398,52 @@
       }
     },
     {
+      "id": "codex-user-scope-reuses-existing-compatible-dir",
+      "operation": "install",
+      "description": "Reuses the existing Codex-compatible user directory when the canonical directory does not exist.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.codex/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.codex/skills/basic/SKILL.md",
+          "$HOME/.codex/skills/basic/.kitup.json"
+        ],
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic"
+        ]
+      }
+    },
+    {
       "id": "codex-user-scope-prefers-first-user-dir",
       "operation": "install",
-      "description": "Installs Codex user-scope skills into the first canonical user path when multiple user paths are valid.",
+      "description": "Prefers the first canonical Codex user path when both compatible directories already exist.",
       "options": {
         "appId": "example-cli",
         "skillBundleDir": "testdata/skills/basic",
@@ -706,6 +749,48 @@
           "conflicts": [],
           "errors": []
         }
+      }
+    },
+    {
+      "id": "auto-host-detection-secondary-specific-path",
+      "operation": "detect",
+      "description": "Detects a host when a non-primary specific detection path exists.",
+      "options": {
+        "scope": "user",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.clawdbot"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "detectedHosts": [
+          "openclaw"
+        ]
+      }
+    },
+    {
+      "id": "auto-host-detection-generic-path-only",
+      "operation": "detect",
+      "description": "Does not infer a specific host from a shared compatibility root alone.",
+      "options": {
+        "scope": "user",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents"
+        ],
+        "files": {
+          "$WORKSPACE/package.json": "{}\n"
+        }
+      },
+      "expected": {
+        "detectedHosts": []
       }
     },
     {

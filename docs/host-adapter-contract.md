@@ -8,7 +8,7 @@ Each host entry describes where a local Agent Skill can be installed and how the
 
 `projectSkillsDirs` and `userSkillsDirs` are ordered.
 
-The first path is the canonical install target for that host. Later paths are compatible discovery roots that the host also scans. SDKs should install to the first path unless a caller explicitly requests another supported path.
+The first path is the canonical install target for that host. Later paths are compatible roots that the host also scans. SDKs reuse the first supported path that already exists, preserving an established installation location. If none exist, SDKs create the first canonical path.
 
 Project paths must be relative paths. User paths must be home-relative paths beginning with `~/`.
 All adapter paths use `/` separators and non-empty segments; `..`, backslashes, colons, and NUL bytes are invalid.
@@ -26,6 +26,8 @@ Aliases are for ecosystem compatibility only. SDK result objects should return t
 `detect` is only a default selector for `agents: "auto"`.
 
 Detection should check path existence. Entries may be home-relative paths such as `~/.codex` or project-relative paths such as `.replit`.
+
+SDKs check every non-generic detection path for a host. Every `detect` entry must be evidence that the specific host is present; a compatibility root that merely belongs to another host belongs in `projectSkillsDirs` or `userSkillsDirs`, not in `detect`. Shared roots and files such as `~/.agents` and `package.json` do not identify a specific host by themselves and must not cause that host to be auto-selected.
 
 Detection must not run host binaries, start editors, mutate configuration, or require network access.
 
