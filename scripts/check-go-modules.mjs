@@ -42,6 +42,8 @@ try {
   });
   console.log("ok: repository Go golden parity");
 
+  run("go", ["test", "-mod=readonly", "-count=1", "./..."], cobra);
+
   run(
     "go",
     ["mod", "edit", "-replace=github.com/lathe-cli/kitup/go=../go"],
