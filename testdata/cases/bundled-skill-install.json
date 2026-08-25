@@ -442,6 +442,296 @@
       }
     },
     {
+      "id": "codex-user-scope-reuses-existing-compatible-dir",
+      "operation": "install",
+      "description": "Reuses the existing compatible Codex user directory when the canonical directory is absent.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": "auto",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.codex/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "detectedHosts": [
+          "codex"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.codex/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.codex/skills/basic/SKILL.md",
+          "$HOME/.codex/skills/basic/.kitup.json"
+        ],
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic"
+        ]
+      }
+    },
+    {
+      "id": "codex-user-scope-ignores-compatible-file",
+      "operation": "install",
+      "description": "Ignores a regular file at a compatible Codex user path and installs into the canonical directory.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$HOME/.codex/skills": "existing file\n"
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.codex/skills",
+          "$HOME/.agents/skills/basic/SKILL.md",
+          "$HOME/.agents/skills/basic/.kitup.json"
+        ]
+      }
+    },
+    {
+      "id": "update-prefers-owned-compatible-target",
+      "operation": "update",
+      "description": "Keeps updating a kitup-owned compatible target after the canonical root appears.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {},
+        "copySkillBundleTo": "$HOME/.codex/skills/basic",
+        "metadata": {
+          "path": "$HOME/.codex/skills/basic/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          },
+          "hash": "from-skill-bundle-dir"
+        }
+      },
+      "expected": {
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.codex/skills/basic",
+              "reason": "unchanged"
+            }
+          ],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.codex/skills/basic/.kitup.json"
+        ],
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic"
+        ]
+      }
+    },
+    {
+      "id": "resolve-targets-prefers-owned-compatible-target",
+      "operation": "resolve-install-targets",
+      "description": "Resolves the same kitup-owned compatible target used by lifecycle operations.",
+      "options": {
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {},
+        "copySkillBundleTo": "$HOME/.codex/skills/basic",
+        "metadata": {
+          "path": "$HOME/.codex/skills/basic/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          },
+          "hash": "from-skill-bundle-dir"
+        }
+      },
+      "expected": {
+        "targets": [
+          {
+            "hostIds": [
+              "codex"
+            ],
+            "skillName": "basic",
+            "targetDir": "$HOME/.codex/skills/basic"
+          }
+        ]
+      }
+    },
+    {
+      "id": "uninstall-prefers-owned-compatible-target",
+      "operation": "uninstall",
+      "description": "Removes a kitup-owned compatible target after the canonical root appears.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {},
+        "copySkillBundleTo": "$HOME/.codex/skills/basic",
+        "metadata": {
+          "path": "$HOME/.codex/skills/basic/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled"
+          },
+          "hash": "from-skill-bundle-dir"
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.codex/skills/basic"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesAbsent": [
+          "$HOME/.codex/skills/basic",
+          "$HOME/.agents/skills/basic"
+        ]
+      }
+    },
+    {
+      "id": "uninstall-removes-all-owned-compatible-targets",
+      "operation": "uninstall",
+      "description": "Removes every owned copy of a skill from configured compatible roots.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$HOME/.agents/skills/basic/SKILL.md": "---\nname: basic\ndescription: Canonical copy.\n---\n",
+          "$HOME/.agents/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "canonical-copy"
+          },
+          "$HOME/.codex/skills/basic/SKILL.md": "---\nname: basic\ndescription: Compatible copy.\n---\n",
+          "$HOME/.codex/skills/basic/.kitup.json": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "compatible-copy"
+          }
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic"
+            },
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.codex/skills/basic"
+            }
+          ],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic",
+          "$HOME/.codex/skills/basic"
+        ]
+      }
+    },
+    {
       "id": "project-scope-install",
       "operation": "install",
       "description": "Installs a bundled skill into the canonical project scope for an explicit host.",
@@ -706,6 +996,107 @@
           "conflicts": [],
           "errors": []
         }
+      }
+    },
+    {
+      "id": "auto-host-detection-secondary-path",
+      "operation": "install",
+      "description": "Detects a host through a non-first detect entry when earlier entries are generic or absent.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": "auto",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.kimi"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "detectedHosts": [
+          "kimi-cli"
+        ],
+        "report": {
+          "installed": [
+            {
+              "hostId": "kimi-cli",
+              "skillName": "basic",
+              "targetDir": "$HOME/.config/agents/skills/basic"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "auto-host-detection-ignores-generic-paths",
+      "operation": "install",
+      "description": "Never treats shared generic roots or install-target shapes as host presence evidence.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": "auto",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents",
+          "$HOME/.agents/skills",
+          "$HOME/.config/agents",
+          "$WORKSPACE/data/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "detectedHosts": [],
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        }
+      }
+    },
+    {
+      "id": "auto-host-detection-ignores-generic-agent-dir",
+      "operation": "install",
+      "description": "Does not treat an ordinary project agent directory as evidence that Eve is installed.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "project",
+        "agents": "auto",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$WORKSPACE/agent"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "detectedHosts": [],
+        "report": {
+          "installed": [],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesAbsent": [
+          "$WORKSPACE/agent/skills/basic"
+        ]
       }
     },
     {
@@ -2945,6 +3336,146 @@
         "throws": true,
         "filesAbsent": [
           "$HOME/C:/outside/basic"
+        ]
+      }
+    },
+    {
+      "id": "uninstall-rejects-boolean-schema-version",
+      "operation": "uninstall",
+      "description": "Rejects a boolean schema version before resolving a lifecycle target as kitup-owned.",
+      "options": {
+        "appId": "example-cli",
+        "skillName": "basic",
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {
+          "$HOME/.codex/skills/basic/.kitup.json": {
+            "schemaVersion": true,
+            "appId": "example-cli",
+            "skillName": "basic",
+            "source": "bundled",
+            "hash": "not-owned"
+          },
+          "$HOME/.codex/skills/basic/user-data.txt": "preserve me\n"
+        }
+      },
+      "expected": {
+        "report": {
+          "removed": [],
+          "skipped": [
+            {
+              "hostId": "codex",
+              "skillName": "basic",
+              "targetDir": "$HOME/.agents/skills/basic",
+              "reason": "missing"
+            }
+          ],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.codex/skills/basic/.kitup.json",
+          "$HOME/.codex/skills/basic/user-data.txt"
+        ],
+        "filesAbsent": [
+          "$HOME/.agents/skills/basic"
+        ]
+      }
+    },
+    {
+      "id": "hosts-file-rejects-self-detect-install-path",
+      "operation": "install",
+      "description": "Rejects a custom host whose non-generic detection path is also an install directory.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "probe"
+        ],
+        "hostsFile": "$WORKSPACE/hosts.json",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$WORKSPACE/hosts.json": {
+            "schemaVersion": 1,
+            "hosts": [
+              {
+                "id": "probe",
+                "displayName": "Probe",
+                "projectSkillsDirs": [],
+                "userSkillsDirs": [
+                  "~/.probe/skills"
+                ],
+                "detect": [
+                  "~/.probe/skills"
+                ],
+                "status": "community"
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "throws": true,
+        "filesAbsent": [
+          "$HOME/.probe/skills/basic"
+        ]
+      }
+    },
+    {
+      "id": "hosts-file-rejects-dot-segment-alias",
+      "operation": "install",
+      "description": "Rejects dot segments that can alias an install directory in a custom host definition.",
+      "options": {
+        "appId": "example-cli",
+        "skillBundleDir": "testdata/skills/basic",
+        "scope": "user",
+        "agents": [
+          "probe"
+        ],
+        "hostsFile": "$WORKSPACE/hosts.json",
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [],
+        "files": {
+          "$WORKSPACE/hosts.json": {
+            "schemaVersion": 1,
+            "hosts": [
+              {
+                "id": "probe",
+                "displayName": "Probe",
+                "projectSkillsDirs": [],
+                "userSkillsDirs": [
+                  "~/.probe/skills"
+                ],
+                "detect": [
+                  "~/.probe/skills/."
+                ],
+                "status": "community"
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "throws": true,
+        "filesAbsent": [
+          "$HOME/.probe/skills/basic"
         ]
       }
     },

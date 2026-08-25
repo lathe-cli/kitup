@@ -14,8 +14,9 @@ flowchart TB
     HOSTSPEC["Host Spec\nspec/hosts.json"]:::contract
     SCHEMAS["Schemas\nspec/hosts.schema.json\ntestdata/cases.schema.json"]:::contract
     CASES["Golden Cases\ntestdata/cases/*.json"]:::contract
+    GOGOLDEN["Go Golden Harness\ntests/go-golden"]:::artifact
     GENHOSTS["Generated Host Constants\nts / go / rust / python"]:::artifact
-    VERIFY["Verification\ncheck.mjs · sync-hosts.mjs"]:::control
+    VERIFY["Verification\ncheck.mjs · sync-hosts.mjs · standalone Go modules"]:::control
     GITHUB["GitHub API"]:::external
     TARGETS["Agent Host\nDirectory State"]:::state
     METADATA[".kitup.json"]:::state
@@ -38,6 +39,8 @@ flowchart TB
     HOSTSPEC -.->|"generates"| GENHOSTS
     VERIFY -.-> HOSTSPEC
     VERIFY -.->|"checks parity"| CASES
+    VERIFY -.-> GOGOLDEN
+    CASES -.-> GOGOLDEN
     VERIFY -.-> GENHOSTS
 
     classDef actor fill:#1f2937,stroke:#94a3b8,color:#f8fafc,stroke-width:1px;

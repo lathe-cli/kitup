@@ -29,6 +29,7 @@ from kitup import (
     plan_bundled_skill,
     resolve_hosts,
     resolve_install_selection,
+    resolve_install_targets,
     run_bundled_skill_install_with_io,
     uninstall_bundled_skill,
     update_bundled_skill,
@@ -96,6 +97,28 @@ def run_case(case, home: Path, workspace: Path) -> None:
             normalize_value(selection),
             expand_value(case["expected"]["selection"], home, workspace),
         )
+        return
+
+    if operation == "resolve-install-targets":
+        targets = resolve_install_targets(
+            BaseOptions(
+                home=str(home),
+                cwd=str(workspace),
+                hosts_file=case_hosts_file(case, home, workspace),
+            ),
+            case["options"]["agents"],
+            case["options"]["scope"],
+            case["options"]["skillName"],
+        )
+        actual = [
+            {
+                "hostIds": target.host_ids,
+                "skillName": target.skill_name,
+                "targetDir": target.target_dir,
+            }
+            for target in targets
+        ]
+        assert actual == expand_value(case["expected"]["targets"], home, workspace)
         return
 
     if operation == "run-install-workflow":

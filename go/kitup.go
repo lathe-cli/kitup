@@ -15,6 +15,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -426,19 +427,25 @@ func LoadHostSpec(hostsFile string) ([]Host, error) {
 
 func validateHostSpec(hosts []Host) error {
 	for _, host := range hosts {
+		installDirs := map[string]bool{}
 		for _, path := range host.ProjectSkillsDir {
 			if !isProjectHostPath(path) {
 				return fmt.Errorf("invalid project path %q for host %q", path, host.ID)
 			}
+			installDirs[path] = true
 		}
 		for _, path := range host.UserSkillsDir {
 			if !isHomeHostPath(path) {
 				return fmt.Errorf("invalid user path %q for host %q", path, host.ID)
 			}
+			installDirs[path] = true
 		}
 		for _, path := range host.Detect {
 			if !isHomeHostPath(path) && !isProjectHostPath(path) {
 				return fmt.Errorf("invalid detect path %q for host %q", path, host.ID)
+			}
+			if !isGenericDetectPath(path) && installDirs[path] {
+				return fmt.Errorf("detect path is an install target for host %q: %q", host.ID, path)
 			}
 		}
 	}
@@ -458,7 +465,7 @@ func isSafeHostPath(path string) bool {
 		return false
 	}
 	for _, segment := range strings.Split(path, "/") {
-		if segment == ".." || segment == "" {
+		if segment == "." || segment == ".." || segment == "" {
 			return false
 		}
 	}
@@ -504,11 +511,14 @@ func DetectHosts(opts BaseOptions, scope Scope) ([]Host, error) {
 	home, cwd := defaults(opts)
 	detected := []Host{}
 	for _, host := range hosts {
-		if len(host.Detect) == 0 || isGenericDetectPath(host.Detect[0]) {
-			continue
-		}
-		if exists(expandHostPath(host.Detect[0], home, cwd)) {
-			detected = append(detected, host)
+		for _, path := range host.Detect {
+			if isGenericDetectPath(path) {
+				continue
+			}
+			if detectionPathExists(expandHostPath(path, home, cwd)) {
+				detected = append(detected, host)
+				break
+			}
 		}
 	}
 	if scope == "" {
@@ -570,6 +580,10 @@ func ResolveInstallSelection(opts InstallSelectionOptions) (InstallSelection, er
 }
 
 func ResolveInstallTargets(opts BaseOptions, agents AgentSelector, scope Scope, skillName string) ([]TargetGroup, []map[string]any, []string, error) {
+	return resolveInstallTargets(opts, agents, scope, skillName, "")
+}
+
+func resolveInstallTargets(opts BaseOptions, agents AgentSelector, scope Scope, skillName, uninstallAppID string) ([]TargetGroup, []map[string]any, []string, error) {
 	if !isValidSkillName(skillName) {
 		return nil, []map[string]any{{
 			"skillName": skillName,
@@ -596,20 +610,29 @@ func ResolveInstallTargets(opts BaseOptions, agents AgentSelector, scope Scope, 
 	}
 	byTarget := map[string]*TargetGroup{}
 	for _, host := range selected {
-		root := chooseScopePath(host, scope, home, cwd)
-		if root == "" {
+		roots := []string{}
+		if uninstallAppID != "" {
+			roots = uninstallScopePaths(host, scope, home, cwd, skillName, uninstallAppID)
+		} else if root := chooseScopePath(host, scope, home, cwd, skillName); root != "" {
+			roots = append(roots, root)
+		}
+		if len(roots) == 0 {
 			errs = append(errs, map[string]any{
 				"hostId": host.ID, "skillName": skillName, "scope": string(scope), "reason": "unsupported-scope",
 			})
 			continue
 		}
-		targetDir := filepath.Join(root, skillName)
-		group := byTarget[targetDir]
-		if group == nil {
-			group = &TargetGroup{SkillName: skillName, TargetDir: targetDir}
-			byTarget[targetDir] = group
+		for _, root := range roots {
+			targetDir := filepath.Join(root, skillName)
+			group := byTarget[targetDir]
+			if group == nil {
+				group = &TargetGroup{SkillName: skillName, TargetDir: targetDir}
+				byTarget[targetDir] = group
+			}
+			if !slices.Contains(group.HostIDs, host.ID) {
+				group.HostIDs = append(group.HostIDs, host.ID)
+			}
 		}
-		group.HostIDs = append(group.HostIDs, host.ID)
 	}
 	targets := []TargetGroup{}
 	for _, target := range byTarget {
@@ -840,7 +863,7 @@ func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
 	if opts.AppID == "" {
 		return emptyUninstallReport([]map[string]any{{"reason": "invalid-app-id"}}), nil
 	}
-	targets, errs, _, err := ResolveInstallTargets(opts.BaseOptions, opts.Agents, opts.Scope, opts.SkillName)
+	targets, errs, _, err := resolveInstallTargets(opts.BaseOptions, opts.Agents, opts.Scope, opts.SkillName, opts.AppID)
 	if err != nil {
 		return UninstallReport{}, err
 	}
@@ -1327,18 +1350,46 @@ func canonicalScopePath(host Host, scope Scope, home, cwd string) string {
 	return expandHostPath(paths[0], home, cwd)
 }
 
-func chooseScopePath(host Host, scope Scope, home, cwd string) string {
+func chooseScopePath(host Host, scope Scope, home, cwd, skillName string) string {
 	paths := scopePaths(host, scope)
+	existing := []string{}
 	for _, path := range paths {
 		expanded := expandHostPath(path, home, cwd)
-		if exists(expanded) {
-			return expanded
+		if isDirectory(expanded) {
+			existing = append(existing, expanded)
 		}
+	}
+	for _, root := range existing {
+		meta, _, managed := readMetadata(filepath.Join(root, skillName))
+		if managed && meta.SkillName == skillName {
+			return root
+		}
+	}
+	if len(existing) > 0 {
+		return existing[0]
 	}
 	if len(paths) == 0 {
 		return ""
 	}
 	return expandHostPath(paths[0], home, cwd)
+}
+
+func uninstallScopePaths(host Host, scope Scope, home, cwd, skillName, appID string) []string {
+	owned := []string{}
+	for _, path := range scopePaths(host, scope) {
+		root := expandHostPath(path, home, cwd)
+		meta, _, managed := readMetadata(filepath.Join(root, skillName))
+		if managed && meta.SkillName == skillName && meta.AppID == appID {
+			owned = append(owned, root)
+		}
+	}
+	if len(owned) > 0 {
+		return owned
+	}
+	if fallback := chooseScopePath(host, scope, home, cwd, skillName); fallback != "" {
+		return []string{fallback}
+	}
+	return nil
 }
 
 func scopePaths(host Host, scope Scope) []string {
@@ -1687,10 +1738,25 @@ func skipName(name string) bool {
 }
 
 func isGenericDetectPath(path string) bool {
-	return path == "~/.agents" || path == "~/.agents/skills" || path == "~/.config/agents"
+	switch path {
+	case "~/.agents", "~/.agents/skills", "~/.config/agents",
+		".agents", ".agents/skills", "package.json":
+		return true
+	}
+	return false
 }
 
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil || !errors.Is(err, os.ErrNotExist)
+}
+
+func detectionPathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

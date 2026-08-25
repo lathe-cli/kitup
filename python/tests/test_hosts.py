@@ -85,7 +85,7 @@ def test_detect_hosts_skips_generic_detect_paths_and_sorts_by_scope_path(tmp_pat
     assert [host.id for host in hosts] == ["codex", "claude-code"]
 
 
-def test_detect_hosts_does_not_scan_past_primary_generic_detect_path(tmp_path):
+def test_detect_hosts_scans_all_non_generic_detect_paths(tmp_path):
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
     home.mkdir()
@@ -100,4 +100,26 @@ def test_detect_hosts_does_not_scan_past_primary_generic_detect_path(tmp_path):
         scope="user",
     )
 
-    assert "kimi-cli" not in [host.id for host in hosts]
+    assert "kimi-cli" in [host.id for host in hosts]
+
+
+def test_detect_hosts_never_counts_generic_detect_paths(tmp_path):
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    home.mkdir()
+    workspace.mkdir()
+    (home / ".agents").mkdir()
+    (home / ".agents" / "skills").mkdir()
+    (home / ".config").mkdir()
+    (home / ".config" / "agents").mkdir()
+    (workspace / "package.json").write_text("{}")
+
+    hosts = detect_hosts(
+        BaseOptions(
+            home=str(home),
+            cwd=str(workspace),
+        ),
+        scope="user",
+    )
+
+    assert hosts == []

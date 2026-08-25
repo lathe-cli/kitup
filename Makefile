@@ -10,13 +10,14 @@ RESET := \033[0m
 TS_DIR := ts
 GO_DIR := go
 GO_COBRA_DIR := go-cobra
+GO_GOLDEN_DIR := tests/go-golden
 RUST_DIR := rust
 PYTHON_DIR := python
 EXAMPLE_TS_DIR := examples/ts
 EXAMPLE_GO_DIR := examples/go
 EXAMPLE_RUST_DIR := examples/rust
 EXAMPLE_PYTHON_DIR := examples/python
-GO_FILES := $(shell find $(GO_DIR) $(GO_COBRA_DIR) $(EXAMPLE_GO_DIR) -name '*.go' -type f)
+GO_FILES := $(shell find $(GO_DIR) $(GO_COBRA_DIR) $(GO_GOLDEN_DIR) $(EXAMPLE_GO_DIR) -name '*.go' -type f)
 
 # ── Quality ──────────────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ test-ts: ## Run TypeScript tests
 	pnpm --dir $(TS_DIR) test
 
 test-go: ## Run Go SDK tests
-	cd $(GO_DIR) && go test ./...
+	node scripts/check-go-modules.mjs
 
 test-go-cobra: ## Run Go Cobra adapter tests
 	cd $(GO_COBRA_DIR) && go test ./...
@@ -45,7 +46,7 @@ test-python: ## Run Python SDK tests
 fmt: fmt-ts fmt-go fmt-rust fmt-python ## Format all SDK code
 
 fmt-ts: ## Format TypeScript code
-	cd $(TS_DIR) && pnpm exec prettier --write src test ../examples/ts/cli.ts ../scripts/check.mjs ../scripts/prepare-release.mjs
+	cd $(TS_DIR) && pnpm exec prettier --write src test ../examples/ts/cli.ts ../scripts/check.mjs ../scripts/check-go-modules.mjs ../scripts/prepare-release.mjs
 
 fmt-go: ## Format Go code
 	gofmt -w $(GO_FILES)

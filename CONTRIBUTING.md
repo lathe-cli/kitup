@@ -31,6 +31,7 @@ make check
 spec/hosts.json          host adapter database
 spec/hosts.schema.json   host spec schema
 testdata/                skill fixtures and golden cases
+tests/go-golden/         repository-level Go parity harness
 docs/                    product and contract docs
 examples/                minimal SDK consumer CLIs
 Makefile                 root developer commands
@@ -58,7 +59,7 @@ Run the full parity gate before opening a pull request:
 make check
 ```
 
-This validates the shared spec, fixtures, generated host constants, TypeScript, Go, Rust, and examples.
+This validates the shared spec, fixtures, generated host constants, standalone Go modules, TypeScript, Go, Rust, and examples.
 
 ## Host Adapter Changes
 

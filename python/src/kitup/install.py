@@ -45,16 +45,60 @@ def expand_host_path(path: str, *, home: Path, cwd: Path) -> Path:
 
 
 def choose_scope_path(
-    host: Host, *, scope: Scope, home: Path, cwd: Path
+    host: Host,
+    *,
+    scope: Scope,
+    home: Path,
+    cwd: Path,
+    skill_name: str,
 ) -> Path | None:
     paths = host.user_skills_dirs if scope == "user" else host.project_skills_dirs
-    for path in paths:
-        expanded = expand_host_path(path, home=home, cwd=cwd)
-        if expanded.exists():
-            return expanded
+    existing = [
+        expanded
+        for path in paths
+        if (expanded := expand_host_path(path, home=home, cwd=cwd)).is_dir()
+    ]
+    for root in existing:
+        metadata = read_install_metadata(root / skill_name)
+        if metadata and metadata.get("skillName") == skill_name:
+            return root
+    if existing:
+        return existing[0]
     if not paths:
         return None
     return expand_host_path(paths[0], home=home, cwd=cwd)
+
+
+def _uninstall_scope_paths(
+    host: Host,
+    *,
+    scope: Scope,
+    home: Path,
+    cwd: Path,
+    skill_name: str,
+    app_id: str,
+) -> list[Path]:
+    paths = host.user_skills_dirs if scope == "user" else host.project_skills_dirs
+    owned = []
+    for path in paths:
+        root = expand_host_path(path, home=home, cwd=cwd)
+        metadata = read_install_metadata(root / skill_name)
+        if (
+            metadata
+            and metadata.get("skillName") == skill_name
+            and metadata.get("appId") == app_id
+        ):
+            owned.append(root)
+    if owned:
+        return owned
+    fallback = choose_scope_path(
+        host,
+        scope=scope,
+        home=home,
+        cwd=cwd,
+        skill_name=skill_name,
+    )
+    return [fallback] if fallback is not None else []
 
 
 def resolve_install_targets(
@@ -319,6 +363,7 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
         options.agents,
         options.scope,
         options.skill_name,
+        uninstall_app_id=options.app_id,
     )
     report = empty_uninstall_report(errors)
     for target in targets:
@@ -362,6 +407,8 @@ def _resolve_install_targets_with_errors(
     agents: str | list[str] | None,
     scope: Scope,
     skill_name: str,
+    *,
+    uninstall_app_id: str | None = None,
 ) -> tuple[list[TargetGroup], list[TargetError]]:
     if not is_valid_skill_name(skill_name):
         return [], [TargetError(reason="invalid-skill-name", skill_name=skill_name)]
@@ -381,8 +428,25 @@ def _resolve_install_targets_with_errors(
 
     by_target: dict[str, TargetGroup] = {}
     for host in selected:
-        root = choose_scope_path(host, scope=scope, home=home, cwd=cwd)
-        if root is None:
+        if uninstall_app_id is not None:
+            roots = _uninstall_scope_paths(
+                host,
+                scope=scope,
+                home=home,
+                cwd=cwd,
+                skill_name=skill_name,
+                app_id=uninstall_app_id,
+            )
+        else:
+            root = choose_scope_path(
+                host,
+                scope=scope,
+                home=home,
+                cwd=cwd,
+                skill_name=skill_name,
+            )
+            roots = [root] if root is not None else []
+        if not roots:
             errors.append(
                 TargetError(
                     reason="unsupported-scope",
@@ -392,12 +456,14 @@ def _resolve_install_targets_with_errors(
                 )
             )
             continue
-        target_dir = str(root / skill_name)
-        group = by_target.get(target_dir)
-        if group is None:
-            group = TargetGroup(skill_name=skill_name, target_dir=target_dir)
-            by_target[target_dir] = group
-        group.host_ids.append(host.id)
+        for root in roots:
+            target_dir = str(root / skill_name)
+            group = by_target.get(target_dir)
+            if group is None:
+                group = TargetGroup(skill_name=skill_name, target_dir=target_dir)
+                by_target[target_dir] = group
+            if host.id not in group.host_ids:
+                group.host_ids.append(host.id)
 
     return [by_target[path] for path in sorted(by_target)], errors
 

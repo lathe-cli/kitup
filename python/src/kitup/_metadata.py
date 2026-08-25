@@ -56,7 +56,8 @@ def read_install_metadata(target_dir: Path) -> dict[str, object] | None:
 
 
 def is_owned_metadata(payload: dict[str, object]) -> bool:
-    if payload.get("schemaVersion") != 1:
+    schema_version = payload.get("schemaVersion")
+    if type(schema_version) is not int or schema_version != 1:
         return False
     app_id = payload.get("appId")
     skill_name = payload.get("skillName")

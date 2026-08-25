@@ -15,7 +15,7 @@ func TestSkillCommandInstallsWithCoreFlags(t *testing.T) {
 	var out bytes.Buffer
 	cmd := NewSkillCommand(Options{
 		AppID:  "example-cli",
-		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle: basicBundle(),
 		Home:   home,
 		Out:    &out,
 	})
@@ -36,7 +36,7 @@ func TestInstallCommandPromptsForScopeBeforeInstall(t *testing.T) {
 	var out bytes.Buffer
 	cmd := NewSkillCommand(Options{
 		AppID:    "example-cli",
-		Bundle:   kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle:   basicBundle(),
 		Home:     home,
 		CWD:      workspace,
 		StdinTTY: true,
@@ -71,7 +71,7 @@ func TestInstallCommandForceOverwritesUnmanaged(t *testing.T) {
 	var out bytes.Buffer
 	cmd := NewSkillCommand(Options{
 		AppID:  "example-cli",
-		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle: basicBundle(),
 		Home:   home,
 		Out:    &out,
 	})
@@ -89,7 +89,7 @@ func TestInstallCommandForceOverwritesUnmanaged(t *testing.T) {
 func TestInstallCommandReturnsCoreFlagError(t *testing.T) {
 	cmd := NewInstallCommand(Options{
 		AppID:  "example-cli",
-		Bundle: kitup.DirectoryBundle(filepath.Join("..", "testdata", "skills", "basic")),
+		Bundle: basicBundle(),
 		Home:   t.TempDir(),
 	})
 	cmd.SetArgs([]string{"--scope", "bad"})
@@ -98,4 +98,11 @@ func TestInstallCommandReturnsCoreFlagError(t *testing.T) {
 	if err == nil || err.Error() != kitup.InstallUX.InvalidFlags {
 		t.Fatalf("got %v, want %q", err, kitup.InstallUX.InvalidFlags)
 	}
+}
+
+func basicBundle() kitup.SkillBundle {
+	return kitup.FilesBundle([]kitup.SkillFile{{
+		Path:     "SKILL.md",
+		Contents: []byte("---\nname: basic\ndescription: Basic fixture.\n---\n"),
+	}})
 }

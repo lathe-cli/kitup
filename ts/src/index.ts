@@ -399,6 +399,10 @@ export async function loadHostSpec(hostsFile?: string): Promise<HostSpec> {
 
 function validateHostSpec(spec: HostSpec) {
   for (const host of spec.hosts ?? []) {
+    const installDirs = new Set([
+      ...(host.projectSkillsDirs ?? []),
+      ...(host.userSkillsDirs ?? []),
+    ]);
     for (const path of host.projectSkillsDirs ?? []) {
       if (!isProjectHostPath(path)) {
         throw new Error(
@@ -417,6 +421,11 @@ function validateHostSpec(spec: HostSpec) {
       if (!isHomeHostPath(path) && !isProjectHostPath(path)) {
         throw new Error(
           `invalid detect path ${JSON.stringify(path)} for host ${host.id}`,
+        );
+      }
+      if (!isGenericDetectPath(path) && installDirs.has(path)) {
+        throw new Error(
+          `detect path is an install target for host ${host.id}: ${JSON.stringify(path)}`,
         );
       }
     }
@@ -441,7 +450,9 @@ function isSafeHostPath(path: string) {
     !path.includes("\0") &&
     !path.includes("\\") &&
     !path.includes(":") &&
-    !path.split("/").some((segment) => segment === ".." || segment === "")
+    !path
+      .split("/")
+      .some((segment) => segment === "." || segment === ".." || segment === "")
   );
 }
 
@@ -488,13 +499,12 @@ export async function detectHosts(
   const detected: Host[] = [];
 
   for (const host of spec.hosts) {
-    const detectPath = host.detect[0];
-    if (
-      detectPath &&
-      !isGenericDetectPath(detectPath) &&
-      (await exists(expandHostPath(detectPath, home, cwd)))
-    ) {
-      detected.push(host);
+    for (const detectPath of host.detect) {
+      if (isGenericDetectPath(detectPath)) continue;
+      if (await exists(expandHostPath(detectPath, home, cwd))) {
+        detected.push(host);
+        break;
+      }
     }
   }
 
@@ -745,6 +755,21 @@ export async function resolveInstallTargets(
   errors: TargetError[];
   detectedHostIds: string[];
 }> {
+  return resolveInstallTargetsForLifecycle(options);
+}
+
+async function resolveInstallTargetsForLifecycle(
+  options: BaseOptions & {
+    agents?: AgentSelector;
+    scope: Scope;
+    skillName: string;
+  },
+  uninstallAppId?: string,
+): Promise<{
+  targets: TargetGroup[];
+  errors: TargetError[];
+  detectedHostIds: string[];
+}> {
   if (!isValidSkillName(options.skillName)) {
     return {
       targets: [],
@@ -769,8 +794,25 @@ export async function resolveInstallTargets(
   const byTarget = new Map<string, TargetGroup>();
 
   for (const host of selected) {
-    const root = await chooseScopePath(host, options.scope, home, cwd);
-    if (!root) {
+    const roots = uninstallAppId
+      ? await uninstallScopePaths(
+          host,
+          options.scope,
+          home,
+          cwd,
+          options.skillName,
+          uninstallAppId,
+        )
+      : [
+          await chooseScopePath(
+            host,
+            options.scope,
+            home,
+            cwd,
+            options.skillName,
+          ),
+        ].filter((root): root is string => Boolean(root));
+    if (roots.length === 0) {
       errors.push({
         hostId: host.id,
         skillName: options.skillName,
@@ -779,14 +821,16 @@ export async function resolveInstallTargets(
       });
       continue;
     }
-    const targetDir = join(root, options.skillName);
-    const group = byTarget.get(targetDir) ?? {
-      hostIds: [],
-      skillName: options.skillName,
-      targetDir,
-    };
-    group.hostIds.push(host.id);
-    byTarget.set(targetDir, group);
+    for (const root of roots) {
+      const targetDir = join(root, options.skillName);
+      const group = byTarget.get(targetDir) ?? {
+        hostIds: [],
+        skillName: options.skillName,
+        targetDir,
+      };
+      if (!group.hostIds.includes(host.id)) group.hostIds.push(host.id);
+      byTarget.set(targetDir, group);
+    }
   }
 
   const targets = [...byTarget.values()].sort((a, b) =>
@@ -1234,10 +1278,10 @@ export async function uninstallBundledSkill(
     };
   }
 
-  const { targets, errors } = await resolveInstallTargets({
-    ...options,
-    skillName: options.skillName,
-  });
+  const { targets, errors } = await resolveInstallTargetsForLifecycle(
+    { ...options, skillName: options.skillName },
+    options.appId,
+  );
   const report: UninstallReport = {
     removed: [],
     skipped: [],
@@ -1635,13 +1679,46 @@ async function chooseScopePath(
   scope: Scope,
   home: string,
   cwd: string,
+  skillName: string,
 ) {
   const paths = scopePaths(host, scope);
+  const existing: string[] = [];
   for (const path of paths) {
     const expanded = expandHostPath(path, home, cwd);
-    if (await exists(expanded)) return expanded;
+    if (await isDirectory(expanded)) existing.push(expanded);
   }
+  for (const root of existing) {
+    const metadata = await readMetadata(join(root, skillName));
+    if (metadata.value?.skillName === skillName) {
+      return root;
+    }
+  }
+  if (existing[0]) return existing[0];
   return paths[0] ? expandHostPath(paths[0], home, cwd) : undefined;
+}
+
+async function uninstallScopePaths(
+  host: Host,
+  scope: Scope,
+  home: string,
+  cwd: string,
+  skillName: string,
+  appId: string,
+) {
+  const owned: string[] = [];
+  for (const path of scopePaths(host, scope)) {
+    const root = expandHostPath(path, home, cwd);
+    const metadata = await readMetadata(join(root, skillName));
+    if (
+      metadata.value?.skillName === skillName &&
+      metadata.value.appId === appId
+    ) {
+      owned.push(root);
+    }
+  }
+  if (owned.length > 0) return owned;
+  const fallback = await chooseScopePath(host, scope, home, cwd, skillName);
+  return fallback ? [fallback] : [];
 }
 
 function scopePaths(host: Host, scope: Scope) {
@@ -1686,18 +1763,31 @@ function skipName(name: string) {
   );
 }
 
+const GENERIC_DETECT_PATHS = new Set([
+  "~/.agents",
+  "~/.agents/skills",
+  "~/.config/agents",
+  ".agents",
+  ".agents/skills",
+  "package.json",
+]);
+
 function isGenericDetectPath(path: string) {
-  return (
-    path === "~/.agents" ||
-    path === "~/.agents/skills" ||
-    path === "~/.config/agents"
-  );
+  return GENERIC_DETECT_PATHS.has(path);
 }
 
 async function exists(path: string) {
   try {
     await stat(path);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isDirectory(path: string) {
+  try {
+    return (await stat(path)).isDirectory();
   } catch {
     return false;
   }

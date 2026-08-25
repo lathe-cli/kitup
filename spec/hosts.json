@@ -84,7 +84,6 @@
       ],
       "detect": [
         "~/.astrbot",
-        "data/skills",
         "~/.astrbot/data"
       ],
       "status": "community"
@@ -381,13 +380,12 @@
       ],
       "userSkillsDirs": [],
       "detect": [
-        "agent",
         "package.json"
       ],
       "status": "community",
       "notes": [
         "Project-only host; userSkillsDirs is intentionally empty.",
-        "Detect from Eve project shape; no global skill directory."
+        "Explicit selection only; generic project paths are not safe detection evidence."
       ]
     },
     {
@@ -450,8 +448,7 @@
       ],
       "detect": [
         "~/.copilot",
-        "~/.agents",
-        "~/.claude"
+        "~/.agents"
       ],
       "status": "documented"
     },
@@ -750,8 +747,7 @@
       ],
       "detect": [
         "~/.config/opencode",
-        "~/.agents",
-        "~/.claude"
+        "~/.agents"
       ],
       "status": "verified"
     },
@@ -1034,15 +1030,7 @@
       ],
       "detect": [
         "~/.warp",
-        "~/.agents",
-        "~/.claude",
-        "~/.codex",
-        "~/.cursor",
-        "~/.gemini",
-        "~/.copilot",
-        "~/.factory",
-        "~/.github",
-        "~/.opencode"
+        "~/.agents"
       ],
       "status": "documented"
     },
