@@ -52,6 +52,10 @@ Your CLI owns the command name and framework shell. `kitup` owns the standard in
 host detection, safe selection policy, summary text, confirmation, workflow exit classification, target paths,
 bundle validation, copy/update semantics, metadata, and conflicts.
 
+The recommended user-facing command is `skill install`. Use `--dry-run` to preview writes. Do not add `plan`,
+`update`, or `upgrade` subcommands; another install updates kitup-owned copies. Optional `status` and `uninstall`
+commands call the primitive APIs. Only the Go Cobra adapter ships those commands.
+
 ### TypeScript
 
 Install:
@@ -231,11 +235,14 @@ from kitup import resources_bundle
 bundle = resources_bundle(files("mycli.skills") / "mycli")
 ```
 
-For non-interactive or embedding scenarios, call `install_bundled_skill`, `plan_bundled_skill`, `update_bundled_skill`, `status_bundled_skill`, `read_installed_metadata`, or `uninstall_bundled_skill` directly.
+For non-interactive or embedding scenarios, call `install_bundled_skill`, `status_bundled_skill`,
+`read_installed_metadata`, or `uninstall_bundled_skill` directly. `plan_bundled_skill` is dry-run install;
+`update_bundled_skill` is install again.
 
 ## Docs
 
 - [API](docs/API.md)
+- [Architecture](docs/architecture.mmd)
 - [Contributing](CONTRIBUTING.md)
 - [Host adapter contract](docs/host-adapter-contract.md)
 - [Release](docs/RELEASE.md)

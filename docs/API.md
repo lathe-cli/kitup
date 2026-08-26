@@ -437,10 +437,13 @@ Recommended CLI behavior:
 
 ```bash
 mycli skill install
+mycli skill install --dry-run
 mycli skill install --scope user --agent codex
 mycli skill install --scope project --agent codex --agent claude-code
 mycli skill install --scope user --agent codex --force
 ```
+
+Do not expose `plan`, `update`, or `upgrade` as separate commands. `planBundledSkill` / `updateBundledSkill` are the same install path: `--dry-run` plans, and another install updates kitup-owned copies. Optional `status` and `uninstall` commands call the primitive APIs; only the Go Cobra adapter ships those commands.
 
 The lower-level selection resolver remains available for custom shells. It returns one of:
 
@@ -481,6 +484,6 @@ Uninstall reports include:
 
 TypeScript returns typed report objects. Go exposes `InstallReport`, `UninstallReport`, `TargetResult`, `TargetStatus`, and `ReportError`. Rust exposes `InstallReport`, `UninstallReport`, `TargetResult`, `TargetStatus`, and `ReportError`.
 
-The serialized JSON report shape is the same across TypeScript, Go, and Rust. `installed`, `updated`, and `removed` contain target results. `skipped` and `conflicts` contain target results plus `reason`.
+The serialized JSON report shape is the same across TypeScript, Go, Rust, and Python. `installed`, `updated`, and `removed` contain target results. `skipped` and `conflicts` contain target results plus `reason`.
 
 Conflict is the safe default. A target directory without matching `.kitup.json` ownership metadata is reported as a conflict, not overwritten unless `force` / `--force` is explicit.

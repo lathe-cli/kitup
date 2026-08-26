@@ -1,11 +1,11 @@
 ---
 name: kitup
-description: Use when integrating kitup into a CLI that ships bundled Agent Skills and needs to install, update, plan, or uninstall those skills across local agent hosts.
+description: Use when integrating the kitup SDK into a CLI that ships a bundled Agent Skill and needs to install it on local agent hosts. Also use when wiring install flags, optional status or uninstall, or the Go Cobra adapter.
 ---
 
 # Kitup
 
-Use kitup as a producer-side SDK. The embedding CLI owns the bundled skill; kitup owns host resolution, skill validation, copy/update/uninstall behavior, `.kitup.json` metadata, conflict safety, and structured reports.
+Use kitup as a producer-side SDK. The embedding CLI owns the bundled skill and command names. kitup owns host resolution, skill validation, copy/update/uninstall behavior, `.kitup.json` metadata, conflict safety, and structured reports.
 
 Call the SDK with:
 
@@ -14,4 +14,25 @@ Call the SDK with:
 - `scope`: `user` or `project`
 - `agents`: explicit host ids, `auto`, or all supported hosts
 
-Prefer `plan` before install when showing users what will change. Treat conflicts as stop conditions unless the SDK has explicit tested support for the desired override.
+## CLI surface
+
+Recommended user-facing command:
+
+```bash
+mycli skill install
+mycli skill install --dry-run
+```
+
+Standard install flags: `--scope`, repeatable `--agent`, `--dry-run`, `--yes` / `-y`, `--force`.
+
+Do not add `plan`, `update`, or `upgrade` subcommands. `--dry-run` is the plan. Re-running install updates kitup-owned copies of the same `appId`. `planBundledSkill` and `updateBundledSkill` are that same install path, not extra commands.
+
+Optional `status` and `uninstall` commands call `statusBundledSkill` and `uninstallBundledSkill`. Uninstall writes immediately; require `--yes` when stdin is not a TTY, and confirm in TTY mode. There is no uninstall force mode. Only the Go Cobra adapter ships these commands; other languages wire their own shell.
+
+## Wiring
+
+For user-facing install, parse flags with `parseInstallFlags` and call `runBundledSkillInstall` with `promptScope: true`. Set `stdinTTY` from the process terminal. Map exits with `installFlagError` and `installWorkflowError`.
+
+For scripts or tests that already know scope and agents, call `installBundledSkill` directly.
+
+Treat conflicts as stop conditions unless the caller passed explicit `--force`.
