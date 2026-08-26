@@ -2,6 +2,7 @@ package kitupcobra
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,6 +98,99 @@ func TestInstallCommandReturnsCoreFlagError(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || err.Error() != kitup.InstallUX.InvalidFlags {
 		t.Fatalf("got %v, want %q", err, kitup.InstallUX.InvalidFlags)
+	}
+}
+
+func TestSkillCommandStatusJSON(t *testing.T) {
+	home := t.TempDir()
+	installBasic(t, home)
+	var out bytes.Buffer
+	cmd := NewSkillCommand(Options{
+		AppID:     "example-cli",
+		SkillName: "basic",
+		Bundle:    basicBundle(),
+		Home:      home,
+		Out:       &out,
+	})
+	cmd.SetArgs([]string{"status", "--agent", "codex", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var report kitup.StatusReport
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Installed) != 1 || report.Installed[0].Metadata.AppID != "example-cli" {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestUninstallCommandRequiresYesWithoutTTY(t *testing.T) {
+	home := t.TempDir()
+	installBasic(t, home)
+	cmd := NewUninstallCommand(Options{
+		AppID:     "example-cli",
+		SkillName: "basic",
+		Home:      home,
+		In:        strings.NewReader(""),
+	})
+	cmd.SetArgs([]string{"--agent", "codex"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected non-interactive uninstall to require confirmation bypass")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "basic", ".kitup.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUninstallCommandJSONKeepsPromptOffStdout(t *testing.T) {
+	home := t.TempDir()
+	installBasic(t, home)
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := NewUninstallCommand(Options{
+		AppID:     "example-cli",
+		SkillName: "basic",
+		Home:      home,
+		StdinTTY:  true,
+		In:        strings.NewReader("y\n"),
+		Out:       &out,
+		Err:       &stderr,
+	})
+	cmd.SetArgs([]string{"--agent", "codex", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var report kitup.UninstallReport
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Removed) != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if strings.Contains(out.String(), "Remove ") || !strings.Contains(stderr.String(), "Remove 1 installed target") {
+		t.Fatalf("stdout=%q stderr=%q", out.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "basic")); !os.IsNotExist(err) {
+		t.Fatalf("expected target removed, got %v", err)
+	}
+}
+
+func installBasic(t *testing.T, home string) {
+	t.Helper()
+	report, err := kitup.InstallBundledSkill(kitup.InstallOptions{
+		BaseOptions: kitup.BaseOptions{Home: home},
+		AppID:       "example-cli",
+		SkillBundle: basicBundle(),
+		Scope:       kitup.UserScope,
+		Agents:      kitup.ExplicitAgents("codex"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Installed) != 1 {
+		t.Fatalf("unexpected install report: %+v", report)
 	}
 }
 

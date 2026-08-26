@@ -16,6 +16,7 @@ from ._metadata import is_valid_skill_name
 from ._paths import normalize_bundle_path, resolve_path, skip_name
 from .types import (
     BundleFile,
+    BundledSkillMetadata,
     GitHubBundleOptions,
     KitupError,
     NormalizedSkillBundle,
@@ -39,7 +40,13 @@ class GitHubBundle:
     options: GitHubBundleOptions
 
 
-SkillBundle = DirectoryBundle | FilesBundle | GitHubBundle
+@dataclass(frozen=True)
+class MetadataBundle:
+    bundle: object
+    metadata: BundledSkillMetadata
+
+
+SkillBundle = DirectoryBundle | FilesBundle | GitHubBundle | MetadataBundle
 
 
 def directory_bundle(path: str) -> DirectoryBundle:
@@ -58,6 +65,12 @@ def resources_bundle(root: Traversable) -> FilesBundle:
 
 def github_bundle(options: GitHubBundleOptions) -> GitHubBundle:
     return GitHubBundle(options=options)
+
+
+def with_bundle_metadata(
+    bundle: SkillBundle, metadata: BundledSkillMetadata
+) -> MetadataBundle:
+    return MetadataBundle(bundle=bundle, metadata=metadata)
 
 
 def _collect_resource_files(
@@ -141,6 +154,8 @@ def normalize_skill_bundle(
         return normalize_files_bundle(bundle.files)
     if isinstance(bundle, GitHubBundle):
         return normalize_files_bundle(fetch_github_directory(bundle.options))
+    if isinstance(bundle, MetadataBundle):
+        return normalize_skill_bundle(bundle.bundle, cwd=cwd)
     raise KitupError(f"unsupported bundle: {type(bundle)!r}")
 
 

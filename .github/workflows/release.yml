@@ -77,6 +77,31 @@ jobs:
       - name: Build Python package
         if: steps.published.outputs.pypi != 'true'
         run: uv build --directory python
+      - name: Publish Go core module tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          go_tag="go/v${version}"
+          if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
+            test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
+          else
+            git tag "$go_tag" "$GITHUB_SHA"
+            git push origin "refs/tags/${go_tag}"
+          fi
+      - name: Verify Go Cobra against published core
+        run: node scripts/check-go-modules.mjs --published-core
+        env:
+          GOPROXY: direct
+          GONOSUMDB: github.com/lathe-cli/kitup/go
+      - name: Publish Go Cobra module tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          go_tag="go-cobra/v${version}"
+          if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
+            test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
+          else
+            git tag "$go_tag" "$GITHUB_SHA"
+            git push origin "refs/tags/${go_tag}"
+          fi
       - name: Publish npm package
         if: steps.published.outputs.npm != 'true'
         run: |
@@ -94,18 +119,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: python/dist
-      - name: Publish Go module tags
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          for module in go go-cobra; do
-            go_tag="${module}/v${version}"
-            if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
-              test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
-            else
-              git tag "$go_tag" "$GITHUB_SHA"
-              git push origin "refs/tags/${go_tag}"
-            fi
-          done
       - name: Create GitHub release
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes

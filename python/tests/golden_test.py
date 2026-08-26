@@ -12,10 +12,12 @@ import threading
 
 from kitup import (
     BaseOptions,
+    BundledSkillMetadata,
     InstallOptions,
     InstallSelectionOptions,
     InstallWorkflowOptions,
     ParsedInstallFlags,
+    StatusOptions,
     UninstallOptions,
     classify_install_workflow_exit,
     compute_bundle_content_hash,
@@ -31,9 +33,11 @@ from kitup import (
     resolve_install_selection,
     resolve_install_targets,
     run_bundled_skill_install_with_io,
+    status_bundled_skill,
     uninstall_bundled_skill,
     update_bundled_skill,
     validate_skill_bundle,
+    with_bundle_metadata,
 )
 from kitup.types import GitHubBundleOptions, SkillFile
 
@@ -183,6 +187,8 @@ def run_case(case, home: Path, workspace: Path) -> None:
 
 def run_report_case(case, home: Path, workspace: Path):
     operation = case["operation"]
+    if operation == "status":
+        return status_bundled_skill(status_options_from_case(case, home, workspace))
     if operation == "uninstall":
         return uninstall_bundled_skill(
             uninstall_options_from_case(case, home, workspace)
@@ -438,6 +444,20 @@ def uninstall_options_from_case(case, home: Path, workspace: Path) -> UninstallO
     )
 
 
+def status_options_from_case(case, home: Path, workspace: Path) -> StatusOptions:
+    return StatusOptions(
+        base=BaseOptions(
+            home=str(home),
+            cwd=str(workspace),
+            hosts_file=case_hosts_file(case, home, workspace),
+        ),
+        app_id=case["options"]["appId"],
+        skill_name=case["options"]["skillName"],
+        scope=case["options"]["scope"],
+        agents=case["options"].get("agents", "auto"),
+    )
+
+
 def selection_options_from_case(
     case, home: Path, workspace: Path
 ) -> InstallSelectionOptions:
@@ -471,13 +491,14 @@ def workflow_options_from_case(
 
 
 def skill_bundle_from_case(case) -> object:
+    bundle: object
     if "skillFiles" in case["options"]:
-        return files_bundle(skill_files(case["options"]["skillFiles"]))
-    if "skillBundleDir" in case["options"]:
-        return directory_bundle(str(repo_path(case["options"]["skillBundleDir"])))
-    if "githubBundle" in case["options"]:
+        bundle = files_bundle(skill_files(case["options"]["skillFiles"]))
+    elif "skillBundleDir" in case["options"]:
+        bundle = directory_bundle(str(repo_path(case["options"]["skillBundleDir"])))
+    elif "githubBundle" in case["options"]:
         bundle = case["options"]["githubBundle"]
-        return github_bundle(
+        bundle = github_bundle(
             GitHubBundleOptions(
                 owner=bundle["owner"],
                 repo=bundle["repo"],
@@ -485,7 +506,20 @@ def skill_bundle_from_case(case) -> object:
                 ref=bundle["ref"],
             )
         )
-    raise AssertionError(f"missing skill bundle for case {case['id']}")
+    else:
+        raise AssertionError(f"missing skill bundle for case {case['id']}")
+    if "bundleMetadata" in case["options"]:
+        metadata = case["options"]["bundleMetadata"]
+        bundle = with_bundle_metadata(
+            bundle,
+            BundledSkillMetadata(
+                source_id=metadata.get("sourceId"),
+                cli_version=metadata.get("cliVersion"),
+                cli_revision=metadata.get("cliRevision"),
+                provenance=metadata.get("provenance", {}),
+            ),
+        )
+    return bundle
 
 
 def skill_files(values) -> list[SkillFile]:

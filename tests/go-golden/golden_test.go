@@ -165,6 +165,14 @@ func runCase(t *testing.T, tc goldenCase, home, workspace string) {
 
 func runReportCase(t *testing.T, tc goldenCase, opts map[string]any, base BaseOptions) (any, error) {
 	switch tc.Operation {
+	case "status":
+		return StatusBundledSkill(StatusOptions{
+			BaseOptions: base,
+			AppID:       opts["appId"].(string),
+			SkillName:   opts["skillName"].(string),
+			Scope:       Scope(opts["scope"].(string)),
+			Agents:      agentSelector(opts["agents"]),
+		})
 	case "uninstall":
 		return UninstallBundledSkill(UninstallOptions{
 			BaseOptions: base,
@@ -415,21 +423,34 @@ func agentSelector(value any) AgentSelector {
 }
 
 func skillBundleFromOptions(opts map[string]any) SkillBundle {
+	var bundle SkillBundle
 	if files, ok := opts["skillFiles"].([]any); ok {
-		return FilesBundle(skillFiles(files))
-	}
-	if dir, ok := opts["skillBundleDir"].(string); ok {
-		return DirectoryBundle(repoPathFromCase(dir))
-	}
-	if bundle, ok := opts["githubBundle"].(map[string]any); ok {
-		return GitHubBundle(GitHubBundleOptions{
-			Owner: bundle["owner"].(string),
-			Repo:  bundle["repo"].(string),
-			Path:  bundle["path"].(string),
-			Ref:   bundle["ref"].(string),
+		bundle = FilesBundle(skillFiles(files))
+	} else if dir, ok := opts["skillBundleDir"].(string); ok {
+		bundle = DirectoryBundle(repoPathFromCase(dir))
+	} else if github, ok := opts["githubBundle"].(map[string]any); ok {
+		bundle = GitHubBundle(GitHubBundleOptions{
+			Owner: github["owner"].(string),
+			Repo:  github["repo"].(string),
+			Path:  github["path"].(string),
+			Ref:   github["ref"].(string),
 		})
 	}
-	return SkillBundle{}
+	if meta, ok := opts["bundleMetadata"].(map[string]any); ok {
+		provenance := map[string]string{}
+		if values, ok := meta["provenance"].(map[string]any); ok {
+			for key, value := range values {
+				provenance[key] = value.(string)
+			}
+		}
+		bundle = WithBundleMetadata(bundle, BundledSkillMetadata{
+			SourceID:    stringValue(meta["sourceId"]),
+			CLIVersion:  stringValue(meta["cliVersion"]),
+			CLIRevision: stringValue(meta["cliRevision"]),
+			Provenance:  provenance,
+		})
+	}
+	return bundle
 }
 
 func skillFiles(values []any) []SkillFile {

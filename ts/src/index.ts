@@ -76,7 +76,19 @@ export interface SkillFile {
 export type SkillBundle =
   | { kind: "directory"; path: string }
   | { kind: "files"; files: SkillFile[] }
-  | { kind: "github"; options: GitHubBundleOptions };
+  | { kind: "github"; options: GitHubBundleOptions }
+  | {
+      kind: "metadata";
+      bundle: SkillBundle;
+      metadata: BundledSkillMetadata;
+    };
+
+export interface BundledSkillMetadata {
+  sourceId?: string;
+  cliVersion?: string;
+  cliRevision?: string;
+  provenance?: Record<string, string>;
+}
 
 export interface GitHubBundleOptions {
   owner: string;
@@ -99,6 +111,8 @@ export interface UninstallOptions extends BaseOptions {
   scope: Scope;
   agents?: AgentSelector;
 }
+
+export interface StatusOptions extends UninstallOptions {}
 
 export interface InstallSelectionOptions extends BaseOptions {
   scope: Scope;
@@ -208,6 +222,30 @@ export interface UninstallReport {
   errors: TargetError[];
 }
 
+export interface InstalledMetadata {
+  schemaVersion: 1;
+  appId: string;
+  skillName: string;
+  source: "bundled" | "github";
+  hash: string;
+  sourceId?: string;
+  version?: string;
+  cliVersion?: string;
+  cliRevision?: string;
+  provenance?: Record<string, string>;
+}
+
+export type InstalledTarget = TargetResult & {
+  metadata: InstalledMetadata;
+};
+
+export interface StatusReport {
+  installed: InstalledTarget[];
+  missing: TargetResult[];
+  conflicts: TargetConflict[];
+  errors: TargetError[];
+}
+
 export type InstallSelectionAction = "install" | "select-agents" | "error";
 
 export interface InstallSelection {
@@ -245,16 +283,7 @@ export interface SkillInfo {
     "missing-skill-md" | "invalid-frontmatter" | "invalid-skill-bundle";
 }
 
-interface InstallMetadata {
-  schemaVersion: 1;
-  appId: string;
-  skillName: string;
-  source: "bundled" | "github";
-  hash: string;
-  sourceId?: string;
-  version?: string;
-  provenance?: Record<string, string>;
-}
+type InstallMetadata = InstalledMetadata;
 
 const defaultAgents: AgentSelector = "auto";
 
@@ -270,11 +299,14 @@ interface NormalizedSkillBundle {
   byPath: Map<string, BundleFile>;
 }
 
-interface BundleMetadata {
+interface ResolvedBundleMetadata {
   source: InstallMetadata["source"];
   sourceId?: string;
   version?: string;
+  cliVersion?: string;
+  cliRevision?: string;
   provenance?: Record<string, string>;
+  explicit?: boolean;
 }
 
 export function directoryBundle(path: string): SkillBundle {
@@ -295,6 +327,13 @@ export async function moduleDirBundle(
 
 export function githubBundle(options: GitHubBundleOptions): SkillBundle {
   return { kind: "github", options };
+}
+
+export function withBundleMetadata(
+  bundle: SkillBundle,
+  metadata: BundledSkillMetadata,
+): SkillBundle {
+  return { kind: "metadata", bundle, metadata };
 }
 
 export function parseInstallFlags(
@@ -955,7 +994,17 @@ async function readSkillBundle(
 async function resolveSkillBundle(
   bundle: SkillBundle,
   cwd = process.cwd(),
-): Promise<{ bundle: NormalizedSkillBundle; metadata: BundleMetadata }> {
+): Promise<{
+  bundle: NormalizedSkillBundle;
+  metadata: ResolvedBundleMetadata;
+}> {
+  if (bundle.kind === "metadata") {
+    const resolved = await resolveSkillBundle(bundle.bundle, cwd);
+    return {
+      bundle: resolved.bundle,
+      metadata: mergeBundleMetadata(resolved.metadata, bundle.metadata),
+    };
+  }
   if (bundle.kind === "directory") {
     const dir = resolvePath(bundle.path, cwd);
     return {
@@ -972,9 +1021,10 @@ async function resolveSkillBundle(
   return resolveGitHubBundle(bundle.options);
 }
 
-async function resolveGitHubBundle(
-  options: GitHubBundleOptions,
-): Promise<{ bundle: NormalizedSkillBundle; metadata: BundleMetadata }> {
+async function resolveGitHubBundle(options: GitHubBundleOptions): Promise<{
+  bundle: NormalizedSkillBundle;
+  metadata: ResolvedBundleMetadata;
+}> {
   const root = trimGitHubPath(options.path);
   if (!options.owner || !options.repo || !root || !options.ref) {
     throw new Error("invalid github bundle");
@@ -1027,6 +1077,29 @@ async function resolveGitHubBundle(
       },
     },
   };
+}
+
+function mergeBundleMetadata(
+  resolved: ResolvedBundleMetadata,
+  supplied: BundledSkillMetadata,
+): ResolvedBundleMetadata {
+  return {
+    ...resolved,
+    sourceId: supplied.sourceId || resolved.sourceId,
+    cliVersion: supplied.cliVersion,
+    cliRevision: supplied.cliRevision,
+    provenance:
+      resolved.provenance || supplied.provenance
+        ? { ...resolved.provenance, ...supplied.provenance }
+        : undefined,
+    explicit: true,
+  };
+}
+
+function isGitHubBundle(bundle: SkillBundle): boolean {
+  return bundle.kind === "github"
+    ? true
+    : bundle.kind === "metadata" && isGitHubBundle(bundle.bundle);
 }
 
 function envBaseUrl(name: string, fallback: string) {
@@ -1150,7 +1223,7 @@ async function installOrPlan(
 
   const cwd = options.cwd ?? process.cwd();
   let bundle: NormalizedSkillBundle;
-  let bundleMetadata: BundleMetadata;
+  let bundleMetadata: ResolvedBundleMetadata;
   try {
     ({ bundle, metadata: bundleMetadata } = await resolveSkillBundle(
       options.skillBundle,
@@ -1159,10 +1232,9 @@ async function installOrPlan(
   } catch {
     return emptyInstallReport([
       {
-        reason:
-          options.skillBundle.kind === "github"
-            ? "bundle-resolve-failed"
-            : "invalid-skill-bundle",
+        reason: isGitHubBundle(options.skillBundle)
+          ? "bundle-resolve-failed"
+          : "invalid-skill-bundle",
       },
     ]);
   }
@@ -1229,7 +1301,23 @@ async function installOrPlan(
       }
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
     } else if (metadata.value.hash === hash) {
-      if (await repairSkillBundleModes(bundle, target.targetDir, write)) {
+      const repaired = await repairSkillBundleModes(
+        bundle,
+        target.targetDir,
+        write,
+      );
+      const metadataChanged =
+        Boolean(bundleMetadata.explicit) &&
+        !installedMetadataEqual(
+          metadata.value,
+          installedMetadata(
+            options.appId,
+            skill.skillName,
+            hash,
+            bundleMetadata,
+          ),
+        );
+      if (repaired || metadataChanged) {
         if (write)
           await writeMetadata(
             target.targetDir,
@@ -1302,12 +1390,59 @@ export async function uninstallBundledSkill(
     } else if (metadata.value.appId !== options.appId) {
       report.conflicts.push({ ...result, reason: "owner-mismatch" });
     } else {
-      await rm(target.targetDir, { recursive: true, force: true });
+      const reason = await removeManagedSkill(
+        target.targetDir,
+        options.appId,
+        options.skillName,
+      );
+      if (reason) {
+        report.conflicts.push({ ...result, reason });
+        continue;
+      }
       report.removed.push(result);
     }
   }
 
   return report;
+}
+
+export async function statusBundledSkill(
+  options: StatusOptions,
+): Promise<StatusReport> {
+  if (!options.appId) {
+    return emptyStatusReport([{ reason: "invalid-app-id" }]);
+  }
+  const { targets, errors } = await resolveInstallTargetsForLifecycle(
+    options,
+    options.appId,
+  );
+  const report = emptyStatusReport(errors);
+  for (const target of targets) {
+    const result = targetResult(target);
+    const metadata = await readMetadata(target.targetDir);
+    if (!metadata.exists) {
+      report.missing.push(result);
+    } else if (
+      !metadata.value ||
+      metadata.value.skillName !== options.skillName
+    ) {
+      report.conflicts.push({ ...result, reason: "unmanaged" });
+    } else if (metadata.value.appId !== options.appId) {
+      report.conflicts.push({ ...result, reason: "owner-mismatch" });
+    } else {
+      report.installed.push({ ...result, metadata: metadata.value });
+    }
+  }
+  return report;
+}
+
+export async function readInstalledMetadata(
+  targetDir: string,
+): Promise<InstalledMetadata | undefined> {
+  const metadata = await readMetadata(targetDir);
+  if (!metadata.exists) return undefined;
+  if (!metadata.value) throw new Error("unmanaged install metadata");
+  return metadata.value;
 }
 
 async function copyManagedSkill(
@@ -1316,7 +1451,7 @@ async function copyManagedSkill(
   appId: string,
   skillName: string,
   hash: string,
-  metadata: BundleMetadata,
+  metadata: ResolvedBundleMetadata,
 ) {
   const tmp = await makeStagingDir(targetDir);
   try {
@@ -1329,13 +1464,41 @@ async function copyManagedSkill(
   }
 }
 
+async function removeManagedSkill(
+  targetDir: string,
+  appId: string,
+  skillName: string,
+): Promise<ConflictReason | undefined> {
+  const quarantine = await mkdtemp(
+    join(dirname(targetDir), `.${basename(targetDir)}.kitup-uninstall-`),
+  );
+  await rm(quarantine, { recursive: true });
+  await rename(targetDir, quarantine);
+  const metadata = await readMetadata(quarantine);
+  const reason =
+    !metadata.value || metadata.value.skillName !== skillName
+      ? "unmanaged"
+      : metadata.value.appId !== appId
+        ? "owner-mismatch"
+        : undefined;
+  if (reason) {
+    if (await exists(targetDir)) {
+      throw new Error(`cannot restore changed install: ${targetDir}`);
+    }
+    await rename(quarantine, targetDir);
+    return reason;
+  }
+  await rm(quarantine, { recursive: true });
+  return undefined;
+}
+
 async function replaceManagedSkill(
   bundle: NormalizedSkillBundle,
   targetDir: string,
   appId: string,
   skillName: string,
   hash: string,
-  metadata: BundleMetadata,
+  metadata: ResolvedBundleMetadata,
 ) {
   const tmp = await makeStagingDir(targetDir);
   const backup = `${tmp}-backup`;
@@ -1404,18 +1567,9 @@ async function writeMetadata(
   appId: string,
   skillName: string,
   hash: string,
-  metadata: BundleMetadata,
+  metadata: ResolvedBundleMetadata,
 ) {
-  const value: InstallMetadata = {
-    schemaVersion: 1,
-    appId,
-    skillName,
-    source: metadata.source,
-    hash,
-  };
-  if (metadata.sourceId) value.sourceId = metadata.sourceId;
-  if (metadata.version) value.version = metadata.version;
-  if (metadata.provenance) value.provenance = metadata.provenance;
+  const value = installedMetadata(appId, skillName, hash, metadata);
   await writeFile(
     join(targetDir, ".kitup.json"),
     `${JSON.stringify(value, null, 2)}\n`,
@@ -1455,12 +1609,80 @@ function parseOwnedMetadata(raw: unknown): InstallMetadata | undefined {
     source: value.source,
     hash: value.hash,
   };
-  if (typeof value.sourceId === "string") metadata.sourceId = value.sourceId;
-  if (typeof value.version === "string") metadata.version = value.version;
-  if (value.provenance && typeof value.provenance === "object") {
-    metadata.provenance = value.provenance as Record<string, string>;
+  for (const key of ["sourceId", "version", "cliVersion", "cliRevision"]) {
+    if (key in value && typeof value[key] !== "string") return undefined;
+  }
+  if (typeof value.sourceId === "string" && value.sourceId)
+    metadata.sourceId = value.sourceId;
+  if (typeof value.version === "string" && value.version)
+    metadata.version = value.version;
+  if (typeof value.cliVersion === "string" && value.cliVersion)
+    metadata.cliVersion = value.cliVersion;
+  if (typeof value.cliRevision === "string" && value.cliRevision)
+    metadata.cliRevision = value.cliRevision;
+  if ("provenance" in value) {
+    if (
+      !value.provenance ||
+      typeof value.provenance !== "object" ||
+      Array.isArray(value.provenance) ||
+      !Object.values(value.provenance).every((item) => typeof item === "string")
+    ) {
+      return undefined;
+    }
+    if (Object.keys(value.provenance).length > 0)
+      metadata.provenance = {
+        ...(value.provenance as Record<string, string>),
+      };
   }
   return metadata;
+}
+
+function installedMetadata(
+  appId: string,
+  skillName: string,
+  hash: string,
+  metadata: ResolvedBundleMetadata,
+): InstalledMetadata {
+  const value: InstalledMetadata = {
+    schemaVersion: 1,
+    appId,
+    skillName,
+    source: metadata.source,
+    hash,
+  };
+  if (metadata.sourceId) value.sourceId = metadata.sourceId;
+  if (metadata.version) value.version = metadata.version;
+  if (metadata.cliVersion) value.cliVersion = metadata.cliVersion;
+  if (metadata.cliRevision) value.cliRevision = metadata.cliRevision;
+  if (metadata.provenance) value.provenance = { ...metadata.provenance };
+  return value;
+}
+
+function installedMetadataEqual(
+  left: InstalledMetadata,
+  right: InstalledMetadata,
+) {
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.appId === right.appId &&
+    left.skillName === right.skillName &&
+    left.source === right.source &&
+    left.hash === right.hash &&
+    left.sourceId === right.sourceId &&
+    left.version === right.version &&
+    left.cliVersion === right.cliVersion &&
+    left.cliRevision === right.cliRevision &&
+    recordEqual(left.provenance, right.provenance)
+  );
+}
+
+function recordEqual(
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined,
+) {
+  const leftEntries = Object.entries(left ?? {}).sort();
+  const rightEntries = Object.entries(right ?? {}).sort();
+  return JSON.stringify(leftEntries) === JSON.stringify(rightEntries);
 }
 
 function targetResult(target: TargetGroup): TargetResult {
@@ -1472,6 +1694,10 @@ function targetResult(target: TargetGroup): TargetResult {
 
 function emptyInstallReport(errors: TargetError[] = []): InstallReport {
   return { installed: [], updated: [], skipped: [], conflicts: [], errors };
+}
+
+function emptyStatusReport(errors: TargetError[] = []): StatusReport {
+  return { installed: [], missing: [], conflicts: [], errors };
 }
 
 class LineReader {

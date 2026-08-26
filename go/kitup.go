@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -242,6 +243,14 @@ type UninstallOptions struct {
 	Agents    AgentSelector
 }
 
+type StatusOptions struct {
+	BaseOptions
+	AppID     string
+	SkillName string
+	Scope     Scope
+	Agents    AgentSelector
+}
+
 type InstallSelectionOptions struct {
 	BaseOptions
 	Scope        Scope
@@ -279,12 +288,21 @@ type SkillFile struct {
 }
 
 type SkillBundle struct {
-	kind   string
-	dir    string
-	fsys   fs.FS
-	root   string
-	files  []SkillFile
-	github GitHubBundleOptions
+	kind    string
+	dir     string
+	fsys    fs.FS
+	root    string
+	files   []SkillFile
+	github  GitHubBundleOptions
+	meta    BundledSkillMetadata
+	metaSet bool
+}
+
+type BundledSkillMetadata struct {
+	SourceID    string
+	CLIVersion  string
+	CLIRevision string
+	Provenance  map[string]string
 }
 
 type GitHubBundleOptions struct {
@@ -308,6 +326,17 @@ func FilesBundle(files []SkillFile) SkillBundle {
 
 func GitHubBundle(opts GitHubBundleOptions) SkillBundle {
 	return SkillBundle{kind: "github", github: opts}
+}
+
+func WithBundleMetadata(bundle SkillBundle, meta BundledSkillMetadata) SkillBundle {
+	bundle.meta = BundledSkillMetadata{
+		SourceID:    meta.SourceID,
+		CLIVersion:  meta.CLIVersion,
+		CLIRevision: meta.CLIRevision,
+		Provenance:  maps.Clone(meta.Provenance),
+	}
+	bundle.metaSet = true
+	return bundle
 }
 
 type TargetGroup struct {
@@ -353,6 +382,31 @@ type UninstallReport struct {
 	Errors    []ReportError  `json:"errors"`
 }
 
+type InstalledMetadata struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	AppID         string            `json:"appId"`
+	SkillName     string            `json:"skillName"`
+	Source        string            `json:"source"`
+	Hash          string            `json:"hash"`
+	SourceID      string            `json:"sourceId,omitempty"`
+	Version       string            `json:"version,omitempty"`
+	CLIVersion    string            `json:"cliVersion,omitempty"`
+	CLIRevision   string            `json:"cliRevision,omitempty"`
+	Provenance    map[string]string `json:"provenance,omitempty"`
+}
+
+type InstalledTarget struct {
+	TargetResult
+	Metadata InstalledMetadata `json:"metadata"`
+}
+
+type StatusReport struct {
+	Installed []InstalledTarget `json:"installed"`
+	Missing   []TargetResult    `json:"missing"`
+	Conflicts []TargetStatus    `json:"conflicts"`
+	Errors    []ReportError     `json:"errors"`
+}
+
 type InstallSelection struct {
 	Action            string           `json:"action"`
 	SelectedHostIDs   []string         `json:"selectedHostIds"`
@@ -371,22 +425,16 @@ type InstallWorkflowReport struct {
 	DryRun    bool             `json:"dryRun"`
 }
 
-type metadata struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	AppID         string            `json:"appId"`
-	SkillName     string            `json:"skillName"`
-	Source        string            `json:"source"`
-	Hash          string            `json:"hash"`
-	SourceID      string            `json:"sourceId,omitempty"`
-	Version       string            `json:"version,omitempty"`
-	Provenance    map[string]string `json:"provenance,omitempty"`
-}
+type metadata = InstalledMetadata
 
 type bundleMetadata struct {
-	Source     string
-	SourceID   string
-	Version    string
-	Provenance map[string]string
+	Source      string
+	SourceID    string
+	Version     string
+	CLIVersion  string
+	CLIRevision string
+	Provenance  map[string]string
+	Explicit    bool
 }
 
 type bundleFile struct {
@@ -879,13 +927,55 @@ func UninstallBundledSkill(opts UninstallOptions) (UninstallReport, error) {
 		case meta.AppID != opts.AppID:
 			report.Conflicts = append(report.Conflicts, withReason(result, "owner-mismatch"))
 		default:
-			if err := os.RemoveAll(target.TargetDir); err != nil {
+			reason, err := removeManagedSkill(target.TargetDir, opts.AppID, opts.SkillName)
+			if err != nil {
 				return report, err
+			}
+			if reason != "" {
+				report.Conflicts = append(report.Conflicts, withReason(result, reason))
+				continue
 			}
 			report.Removed = append(report.Removed, result)
 		}
 	}
 	return report, nil
+}
+
+func StatusBundledSkill(opts StatusOptions) (StatusReport, error) {
+	if opts.AppID == "" {
+		return emptyStatusReport([]map[string]any{{"reason": "invalid-app-id"}}), nil
+	}
+	targets, errs, _, err := resolveInstallTargets(opts.BaseOptions, opts.Agents, opts.Scope, opts.SkillName, opts.AppID)
+	if err != nil {
+		return StatusReport{}, err
+	}
+	report := emptyStatusReport(errs)
+	for _, target := range targets {
+		result := targetResult(target)
+		meta, present, managed := readMetadata(target.TargetDir)
+		switch {
+		case !present:
+			report.Missing = append(report.Missing, result)
+		case !managed || meta.SkillName != opts.SkillName:
+			report.Conflicts = append(report.Conflicts, withReason(result, "unmanaged"))
+		case meta.AppID != opts.AppID:
+			report.Conflicts = append(report.Conflicts, withReason(result, "owner-mismatch"))
+		default:
+			report.Installed = append(report.Installed, InstalledTarget{TargetResult: result, Metadata: meta})
+		}
+	}
+	return report, nil
+}
+
+func ReadInstalledMetadata(targetDir string) (InstalledMetadata, bool, error) {
+	meta, present, managed := readMetadata(targetDir)
+	if !present {
+		return InstalledMetadata{}, false, nil
+	}
+	if !managed {
+		return InstalledMetadata{}, false, errors.New("unmanaged install metadata")
+	}
+	return meta, true, nil
 }
 
 func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
@@ -948,7 +1038,8 @@ func installOrPlan(opts InstallOptions, write bool) (InstallReport, error) {
 			if err != nil {
 				return report, err
 			}
-			if repaired {
+			metadataChanged := bundleMeta.Explicit && !installedMetadataEqual(meta, newInstalledMetadata(opts.AppID, skill.SkillName, hash, bundleMeta))
+			if repaired || metadataChanged {
 				if write {
 					if err := writeMetadata(target.TargetDir, opts.AppID, skill.SkillName, hash, bundleMeta); err != nil {
 						return report, err
@@ -1034,6 +1125,37 @@ func makeStagingDir(targetDir string) (string, error) {
 	return tmp, nil
 }
 
+func removeManagedSkill(targetDir, appID, skillName string) (string, error) {
+	quarantine, err := makeStagingDir(targetDir)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Remove(quarantine); err != nil {
+		return "", err
+	}
+	if err := os.Rename(targetDir, quarantine); err != nil {
+		return "", err
+	}
+	meta, present, managed := readMetadata(quarantine)
+	reason := ""
+	switch {
+	case !present || !managed || meta.SkillName != skillName:
+		reason = "unmanaged"
+	case meta.AppID != appID:
+		reason = "owner-mismatch"
+	}
+	if reason != "" {
+		if exists(targetDir) {
+			return "", fmt.Errorf("cannot restore changed install; preserved at %s", quarantine)
+		}
+		if err := os.Rename(quarantine, targetDir); err != nil {
+			return "", err
+		}
+		return reason, nil
+	}
+	return "", os.RemoveAll(quarantine)
+}
+
 func copySkillBundle(bundle normalizedSkillBundle, dest string) error {
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
@@ -1078,19 +1200,7 @@ func repairSkillBundleModes(bundle normalizedSkillBundle, dest string, write boo
 }
 
 func writeMetadata(targetDir, appID, skillName, hash string, bundleMeta bundleMetadata) error {
-	meta := metadata{
-		SchemaVersion: 1,
-		AppID:         appID,
-		SkillName:     skillName,
-		Source:        bundleMeta.Source,
-		Hash:          hash,
-		SourceID:      bundleMeta.SourceID,
-		Version:       bundleMeta.Version,
-		Provenance:    bundleMeta.Provenance,
-	}
-	if meta.Source == "" {
-		meta.Source = "bundled"
-	}
+	meta := newInstalledMetadata(appID, skillName, hash, bundleMeta)
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
@@ -1119,6 +1229,8 @@ func readMetadata(targetDir string) (metadata, bool, bool) {
 		"hash":          &meta.Hash,
 		"sourceId":      &meta.SourceID,
 		"version":       &meta.Version,
+		"cliVersion":    &meta.CLIVersion,
+		"cliRevision":   &meta.CLIRevision,
 		"provenance":    &meta.Provenance,
 	}
 	for name, destination := range fields {
@@ -1134,6 +1246,38 @@ func readMetadata(targetDir string) (metadata, bool, bool) {
 		return metadata{}, true, false
 	}
 	return meta, true, true
+}
+
+func newInstalledMetadata(appID, skillName, hash string, bundleMeta bundleMetadata) InstalledMetadata {
+	source := bundleMeta.Source
+	if source == "" {
+		source = "bundled"
+	}
+	return InstalledMetadata{
+		SchemaVersion: 1,
+		AppID:         appID,
+		SkillName:     skillName,
+		Source:        source,
+		Hash:          hash,
+		SourceID:      bundleMeta.SourceID,
+		Version:       bundleMeta.Version,
+		CLIVersion:    bundleMeta.CLIVersion,
+		CLIRevision:   bundleMeta.CLIRevision,
+		Provenance:    maps.Clone(bundleMeta.Provenance),
+	}
+}
+
+func installedMetadataEqual(left, right InstalledMetadata) bool {
+	return left.SchemaVersion == right.SchemaVersion &&
+		left.AppID == right.AppID &&
+		left.SkillName == right.SkillName &&
+		left.Source == right.Source &&
+		left.Hash == right.Hash &&
+		left.SourceID == right.SourceID &&
+		left.Version == right.Version &&
+		left.CLIVersion == right.CLIVersion &&
+		left.CLIRevision == right.CLIRevision &&
+		maps.Equal(left.Provenance, right.Provenance)
 }
 
 func isOwnedMetadata(meta metadata) bool {
@@ -1172,6 +1316,15 @@ func emptyUninstallReport(errs []map[string]any) UninstallReport {
 	return UninstallReport{
 		Removed:   []TargetResult{},
 		Skipped:   []TargetStatus{},
+		Conflicts: []TargetStatus{},
+		Errors:    reportErrors(errs),
+	}
+}
+
+func emptyStatusReport(errs []map[string]any) StatusReport {
+	return StatusReport{
+		Installed: []InstalledTarget{},
+		Missing:   []TargetResult{},
 		Conflicts: []TargetStatus{},
 		Errors:    reportErrors(errs),
 	}
@@ -1450,16 +1603,35 @@ func parseFrontmatter(content string) map[string]string {
 }
 
 func resolveSkillBundle(bundle SkillBundle) (normalizedSkillBundle, bundleMetadata, error) {
+	var normalized normalizedSkillBundle
+	var meta bundleMetadata
+	var err error
 	switch bundle.kind {
 	case "github":
-		return resolveGitHubBundle(bundle.github)
+		normalized, meta, err = resolveGitHubBundle(bundle.github)
 	default:
-		normalized, err := readSkillBundle(bundle)
-		if err != nil {
-			return normalizedSkillBundle{}, bundleMetadata{}, err
-		}
-		return normalized, bundleMetadata{Source: "bundled"}, nil
+		normalized, err = readSkillBundle(bundle)
+		meta = bundleMetadata{Source: "bundled"}
 	}
+	if err != nil {
+		return normalizedSkillBundle{}, bundleMetadata{}, err
+	}
+	if bundle.meta.SourceID != "" {
+		meta.SourceID = bundle.meta.SourceID
+	}
+	meta.CLIVersion = bundle.meta.CLIVersion
+	meta.CLIRevision = bundle.meta.CLIRevision
+	if len(bundle.meta.Provenance) > 0 {
+		meta.Provenance = maps.Clone(meta.Provenance)
+		if meta.Provenance == nil {
+			meta.Provenance = map[string]string{}
+		}
+		for key, value := range bundle.meta.Provenance {
+			meta.Provenance[key] = value
+		}
+	}
+	meta.Explicit = bundle.metaSet
+	return normalized, meta, nil
 }
 
 func resolveGitHubBundle(opts GitHubBundleOptions) (normalizedSkillBundle, bundleMetadata, error) {

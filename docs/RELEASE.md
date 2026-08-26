@@ -53,7 +53,7 @@ git push origin vX.Y.Z
 
 Do not tag the release branch. Do not publish packages by hand during the normal flow.
 
-The release workflow publishes npm, PyPI, and crates.io packages, creates the `go/vX.Y.Z` and `go-cobra/vX.Y.Z` tags, creates the GitHub Release, and runs the public install smoke check.
+The release workflow creates `go/vX.Y.Z`, verifies the Cobra adapter against that published core version, creates `go-cobra/vX.Y.Z`, publishes npm, PyPI, and crates.io packages, creates the GitHub Release, and runs the public install smoke check. Both Go modules keep the same release version; only their publication steps are ordered by dependency.
 
 ## First npm Release
 
@@ -76,6 +76,7 @@ The release workflow is resumable:
 - If PyPI already has the version, Python build and publish are skipped.
 - If crates.io already has the version, crate publish is skipped.
 - If `go/vX.Y.Z` or `go-cobra/vX.Y.Z` already exists, the workflow verifies that it points at the release commit.
+- If Cobra verification fails after the core tag is published, rerunning the workflow reuses the verified core tag and does not create the Cobra tag until its declared core dependency passes.
 
 Do not delete and recreate a release tag after any registry has accepted the version unless the tag points at the wrong commit and the recovery plan is explicit.
 

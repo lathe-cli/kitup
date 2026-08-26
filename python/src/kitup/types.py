@@ -72,6 +72,14 @@ class GitHubBundleOptions:
 
 
 @dataclass(frozen=True)
+class BundledSkillMetadata:
+    source_id: str | None = None
+    cli_version: str | None = None
+    cli_revision: str | None = None
+    provenance: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class BundleFile:
     path: str
     bytes: bytes
@@ -97,6 +105,15 @@ class InstallOptions:
 
 @dataclass(frozen=True)
 class UninstallOptions:
+    base: BaseOptions
+    app_id: str
+    skill_name: str
+    scope: Scope
+    agents: str | list[str] = "auto"
+
+
+@dataclass(frozen=True)
+class StatusOptions:
     base: BaseOptions
     app_id: str
     skill_name: str
@@ -139,6 +156,37 @@ class InstallReport:
 class UninstallReport:
     removed: list[TargetResult] = field(default_factory=list)
     skipped: list[TargetStatus] = field(default_factory=list)
+    conflicts: list[TargetStatus] = field(default_factory=list)
+    errors: list[TargetError] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class InstalledMetadata:
+    schema_version: int
+    app_id: str
+    skill_name: str
+    source: Literal["bundled", "github"]
+    hash: str
+    source_id: str | None = None
+    version: str | None = None
+    cli_version: str | None = None
+    cli_revision: str | None = None
+    provenance: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class InstalledTarget:
+    skill_name: str
+    target_dir: str
+    metadata: InstalledMetadata
+    host_id: str | None = None
+    host_ids: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class StatusReport:
+    installed: list[InstalledTarget] = field(default_factory=list)
+    missing: list[TargetResult] = field(default_factory=list)
     conflicts: list[TargetStatus] = field(default_factory=list)
     errors: list[TargetError] = field(default_factory=list)
 
