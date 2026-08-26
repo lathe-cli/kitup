@@ -14,7 +14,7 @@ Keep changes inside the v0.1 boundary:
 - copy, update, and uninstall kitup-owned installs
 - preserve `.kitup.json` ownership safety
 - return structured reports
-- keep TypeScript, Go, and Rust behavior aligned through golden cases
+- keep TypeScript, Go, Rust, and Python behavior aligned through golden cases
 
 Do not add marketplace, registry, private remote install, custom provider, script execution, MCP server, GUI, or agent runtime behavior unless the product boundary changes first.
 
@@ -39,7 +39,7 @@ scripts/check.mjs        spec, fixture, and SDK parity validation
 scripts/sync-hosts.mjs   generated host constants
 ```
 
-TypeScript, Go, and Rust SDKs live in `ts/`, `go/`, and `rust/`.
+TypeScript, Go, Rust, and Python SDKs live in `ts/`, `go/`, `rust/`, and `python/`.
 
 ## Common Commands
 
@@ -47,7 +47,7 @@ TypeScript, Go, and Rust SDKs live in `ts/`, `go/`, and `rust/`.
 make generate        # refresh generated host constants
 make generate-check  # verify generated host constants are current
 make check           # full parity and example gate
-make fmt             # format TypeScript, Go, and Rust files
+make fmt             # format TypeScript, Go, Rust, and Python files
 make clean           # remove local build outputs
 ```
 
@@ -59,7 +59,7 @@ Run the full parity gate before opening a pull request:
 make check
 ```
 
-This validates the shared spec, fixtures, generated host constants, standalone Go modules, TypeScript, Go, Rust, and examples.
+This validates the shared spec, fixtures, generated host constants, standalone Go modules, TypeScript, Go, Rust, Python, and examples.
 
 ## Host Adapter Changes
 
@@ -72,6 +72,7 @@ Host support is data-first.
   - `ts/src/hosts.generated.ts`
   - `go/hosts_gen.go`
   - `rust/src/hosts_generated.rs`
+  - `python/src/kitup/_hosts_generated.py`
 
 ## SDK Behavior Changes
 

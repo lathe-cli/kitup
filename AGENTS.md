@@ -44,7 +44,7 @@ Use the live repository state, not memory or aspiration.
 - `spec/hosts.json` is the host adapter database.
 - `spec/*.schema.json` defines accepted shared data shape.
 - `testdata/cases/*.json` defines cross-language behavior.
-- Generated host constants in `ts/`, `go/`, and `rust/` come from `spec/hosts.json`; never edit them by hand.
+- Generated host constants in `ts/`, `go/`, `rust/`, and `python/` come from `spec/hosts.json`; never edit them by hand.
 - `scripts/sync-hosts.mjs` refreshes and checks generated host constants.
 - `scripts/check.mjs` is the current parity gate.
 - `docs/host-adapter-contract.md` explains host adapter semantics.
@@ -99,7 +99,7 @@ Ownership is controlled by `.kitup.json`:
 
 Conflict is the safe default. `force` and `adopt` must stay explicit, tested, and narrow.
 
-Content hashes must be deterministic across TypeScript, Go, and Rust. Hash bundled skill files by sorted relative path and bytes, excluding `.kitup.json` and transient files.
+Content hashes must be deterministic across TypeScript, Go, Rust, and Python. Hash bundled skill files by sorted relative path and bytes, excluding `.kitup.json` and transient files.
 
 Reports are API contracts. Return structured `installed`, `updated`, `skipped`, `conflicts`, and `errors` data instead of relying on logs.
 
@@ -107,7 +107,7 @@ Skill bundles are directory trees. `SKILL.md` must live at the bundle root, but 
 
 ## Multi-Language Parity
 
-TypeScript, Go, and Rust should be native SDKs that consume the same shared spec and fixtures.
+TypeScript, Go, Rust, and Python should be native SDKs that consume the same shared spec and fixtures.
 
 Do not replace this with a single binary core, cross-language FFI, shelling out to another runtime, or generated behavior unless the project direction is explicitly changed.
 

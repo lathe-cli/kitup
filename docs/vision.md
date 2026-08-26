@@ -115,7 +115,7 @@ Most host support is path data. Put it in a shared host adapter database. Keep t
 
 ### Native over clever
 
-TypeScript, Go, and Rust users should get native SDKs. Avoid forcing a Go CLI to shell out to Node, or a Rust CLI to ship a JS runtime.
+TypeScript, Go, Rust, and Python users should get native SDKs. Avoid forcing a Go CLI to shell out to Node, or a Rust CLI to ship a JS runtime.
 
 ### Copy over symlink
 
