@@ -31,6 +31,8 @@ The release target creates `release/vX.Y.Z`, updates:
 
 - `ts/package.json`
 - `python/pyproject.toml`
+- `python/uv.lock`
+- `examples/python/uv.lock`
 - `rust/Cargo.toml`
 - `rust/Cargo.lock`
 - `examples/rust/Cargo.lock`

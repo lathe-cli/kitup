@@ -29,6 +29,8 @@ const goCobraModPath = "go-cobra/go.mod";
 const rustLockPath = "rust/Cargo.lock";
 const exampleRustLockPath = "examples/rust/Cargo.lock";
 const pythonPackagePath = "python/pyproject.toml";
+const pythonLockPath = "python/uv.lock";
+const examplePythonLockPath = "examples/python/uv.lock";
 const pkg = JSON.parse(read(packagePath));
 const currentVersion = pkg.version;
 const nextVersion = bumpVersion(currentVersion, bump);
@@ -41,6 +43,8 @@ const changedFiles = [
   exampleRustLockPath,
   goCobraModPath,
   pythonPackagePath,
+  pythonLockPath,
+  examplePythonLockPath,
 ];
 
 if (!dryRun) {
@@ -66,7 +70,9 @@ if (dryRun) {
   console.log(`Would create branch: ${branch}`);
   console.log(`Would update version: ${currentVersion} -> ${nextVersion}`);
   console.log(`Would update files: ${changedFiles.join(", ")}`);
-  console.log(`Would run: cargo generate-lockfile, make check, git commit -s`);
+  console.log(
+    `Would run: cargo generate-lockfile, uv lock, make check, git commit -s`,
+  );
   process.exit(0);
 }
 
@@ -76,6 +82,8 @@ run("cargo", [
   "--manifest-path",
   "examples/rust/Cargo.toml",
 ]);
+run("uv", ["lock", "--directory", "python"]);
+run("uv", ["lock", "--directory", "examples/python"]);
 run("make", ["check"]);
 run("git", ["add", ...changedFiles]);
 run("git", ["commit", "-s", "-m", `chore: prepare ${tag} release`]);
