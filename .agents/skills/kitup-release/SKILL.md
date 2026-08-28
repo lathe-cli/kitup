@@ -39,6 +39,8 @@ Release prep must keep these in sync:
 
 - `ts/package.json`
 - `python/pyproject.toml`
+- `python/uv.lock`
+- `examples/python/uv.lock`
 - `rust/Cargo.toml`
 - `rust/Cargo.lock`
 - `examples/rust/Cargo.lock`

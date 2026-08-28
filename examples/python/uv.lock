@@ -15,7 +15,7 @@ requires-dist = [{ name = "kitup-sdk", directory = "../../python" }]
 
 [[package]]
 name = "kitup-sdk"
-version = "0.1.3"
+version = "0.1.4"
 source = { directory = "../../python" }
 
 [package.metadata]

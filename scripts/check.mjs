@@ -301,6 +301,16 @@ function validateVersions() {
     ) === version,
     "python version drifted",
   );
+  for (const path of ["python/uv.lock", "examples/python/uv.lock"]) {
+    assert(
+      matchOne(
+        path,
+        /\[\[package\]\]\nname = "kitup-sdk"\nversion = "([^"]+)"/,
+        `${path} kitup-sdk version`,
+      ) === version,
+      `${path} version drifted`,
+    );
+  }
   assert(
     matchOne(
       "go-cobra/go.mod",
