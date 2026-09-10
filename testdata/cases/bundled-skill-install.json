@@ -1049,7 +1049,7 @@
             {
               "hostId": "kimi-cli",
               "skillName": "basic",
-              "targetDir": "$HOME/.config/agents/skills/basic"
+              "targetDir": "$HOME/.agents/skills/basic"
             }
           ],
           "updated": [],
