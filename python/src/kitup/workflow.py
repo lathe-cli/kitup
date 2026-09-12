@@ -21,22 +21,7 @@ from .types import (
 
 
 def split_flag_values(values: list[str]) -> list[str]:
-    return [
-        part.strip()
-        for value in values
-        for part in value.replace(",", " ").split()
-        if part.strip()
-    ]
-
-
-def dedupe(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            result.append(value)
-    return result
+    return [part for value in values for part in value.replace(",", " ").split()]
 
 
 def parse_scope_flag(
@@ -68,7 +53,7 @@ def agent_selector_from_flags(
                 }
             )
         return "*"
-    return dedupe(agents)
+    return list(dict.fromkeys(agents))
 
 
 def parse_install_flags(flags: dict[str, object]) -> ParsedInstallFlags:
@@ -201,7 +186,7 @@ def run_bundled_skill_install_with_io(
     output: object | None,
 ) -> InstallWorkflowReport:
     reader = _LineReader(input)
-    writer = _coerce_output(output)
+    writer = _OutputWriter(output)
     scope, scope_error = _resolve_workflow_scope(
         reader=reader,
         output=writer,
@@ -217,8 +202,8 @@ def run_bundled_skill_install_with_io(
         return InstallWorkflowReport(
             selection=scope_error,
             scope=scope,
-            plan=empty_install_report(),
-            report=empty_install_report(),
+            plan=InstallReport(),
+            report=InstallReport(),
             canceled=False,
             dry_run=options.dry_run,
         )
@@ -238,8 +223,8 @@ def run_bundled_skill_install_with_io(
         return InstallWorkflowReport(
             selection=selection,
             scope=scope,
-            plan=empty_install_report(),
-            report=empty_install_report(),
+            plan=InstallReport(),
+            report=InstallReport(),
             canceled=False,
             dry_run=options.dry_run,
         )
@@ -255,8 +240,8 @@ def run_bundled_skill_install_with_io(
             return InstallWorkflowReport(
                 selection=selection,
                 scope=scope,
-                plan=empty_install_report(),
-                report=empty_install_report(),
+                plan=InstallReport(),
+                report=InstallReport(),
                 canceled=True,
                 dry_run=options.dry_run,
             )
@@ -297,21 +282,12 @@ def run_bundled_skill_install_with_io(
             dry_run=False,
         )
     _render_install_summary(writer, plan)
-    if not _has_install_writes(plan):
-        return InstallWorkflowReport(
-            selection=selection,
-            scope=scope,
-            plan=plan,
-            report=plan,
-            canceled=False,
-            dry_run=False,
-        )
     if selection.needs_confirmation and not _prompt_confirmation(reader, writer):
         return InstallWorkflowReport(
             selection=selection,
             scope=scope,
             plan=plan,
-            report=empty_install_report(),
+            report=InstallReport(),
             canceled=True,
             dry_run=False,
         )
@@ -325,10 +301,6 @@ def run_bundled_skill_install_with_io(
         canceled=False,
         dry_run=False,
     )
-
-
-def empty_install_report(errors: list[object] | None = None) -> InstallReport:
-    return InstallReport(errors=list(errors or []))
 
 
 def _resolve_workflow_scope(
@@ -478,10 +450,6 @@ def _has_visible_install_plan(report: InstallReport) -> bool:
     )
 
 
-def _has_install_writes(report: InstallReport) -> bool:
-    return len(report.installed) + len(report.updated) > 0
-
-
 def _install_selection(
     selected_host_ids: list[str],
     detected_host_ids: list[str],
@@ -548,11 +516,7 @@ def _coerce_optional_text(value: object) -> str | None:
 
 
 def _coerce_flag_values(value: object) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [item for item in value if isinstance(item, str)]
-    if isinstance(value, tuple):
+    if isinstance(value, (list, tuple)):
         return [item for item in value if isinstance(item, str)]
     if isinstance(value, str):
         return [value]
@@ -592,14 +556,14 @@ class _LineReader:
         if source is None:
             return []
         if isinstance(source, bytes):
-            return self._split_text(source.decode("utf-8"))
+            return source.decode("utf-8").splitlines()
         if isinstance(source, str):
-            return self._split_text(source)
+            return source.splitlines()
         if hasattr(source, "read"):
             contents = source.read()
             if isinstance(contents, bytes):
-                return self._split_text(contents.decode("utf-8"))
-            return self._split_text(str(contents))
+                return contents.decode("utf-8").splitlines()
+            return str(contents).splitlines()
         if isinstance(source, Iterable):
             chunks: list[str] = []
             for item in source:
@@ -607,19 +571,8 @@ class _LineReader:
                     chunks.append(item.decode("utf-8"))
                 else:
                     chunks.append(str(item))
-            return self._split_text("".join(chunks))
+            return "".join(chunks).splitlines()
         return []
-
-    @staticmethod
-    def _split_text(text: str) -> list[str]:
-        if text == "":
-            return []
-        lines = text.splitlines()
-        if text.endswith(("\n", "\r")):
-            return [line.rstrip("\r") for line in lines]
-        if not lines:
-            return [text.rstrip("\r")]
-        return [line.rstrip("\r") for line in lines]
 
 
 class _OutputWriter:
@@ -630,7 +583,3 @@ class _OutputWriter:
         if self._target is None:
             return
         self._target.write(chunk)
-
-
-def _coerce_output(output: object | None) -> _OutputWriter:
-    return _OutputWriter(output)

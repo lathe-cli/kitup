@@ -231,7 +231,9 @@ func setupGiven(t *testing.T, tc goldenCase, home, workspace string) {
 	}
 	if target, ok := tc.Given["copySkillBundleTo"].(string); ok {
 		must(t, os.RemoveAll(expandString(target, home, workspace)))
-		must(t, copySkillBundleDir(caseSkillBundleDir(tc), expandString(target, home, workspace)))
+		bundle, err := readSkillBundle(DirectoryBundle(caseSkillBundleDir(tc)))
+		must(t, err)
+		must(t, copySkillBundle(bundle, expandString(target, home, workspace)))
 	}
 	if modes, ok := tc.Given["fileModes"].(map[string]any); ok {
 		for path, mode := range modes {
