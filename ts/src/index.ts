@@ -294,7 +294,6 @@ interface BundleFile {
 }
 
 interface NormalizedSkillBundle {
-  label?: string;
   files: BundleFile[];
   byPath: Map<string, BundleFile>;
 }
@@ -754,17 +753,6 @@ export async function runBundledSkillInstall(
   }
   renderInstallSummary(output, plan);
 
-  if (plan.installed.length + plan.updated.length === 0) {
-    return {
-      selection,
-      scope,
-      plan,
-      report: plan,
-      canceled: false,
-      dryRun: false,
-    };
-  }
-
   if (selection.needsConfirmation) {
     const confirmed = await promptConfirmation(reader, output);
     if (!confirmed) {
@@ -1006,9 +994,9 @@ async function resolveSkillBundle(
     };
   }
   if (bundle.kind === "directory") {
-    const dir = resolvePath(bundle.path, cwd);
+    const dir = resolve(cwd, bundle.path);
     return {
-      bundle: normalizeSkillFiles(await readDirectoryBundleFiles(dir), dir),
+      bundle: normalizeSkillFiles(await readDirectoryBundleFiles(dir)),
       metadata: { source: "bundled" },
     };
   }
@@ -1157,10 +1145,7 @@ async function readDirectoryBundleFiles(
   return files;
 }
 
-function normalizeSkillFiles(
-  files: SkillFile[],
-  label?: string,
-): NormalizedSkillBundle {
+function normalizeSkillFiles(files: SkillFile[]): NormalizedSkillBundle {
   const byPath = new Map<string, BundleFile>();
   for (const file of files) {
     const normalizedPath = normalizeBundlePath(file.path);
@@ -1180,7 +1165,7 @@ function normalizeSkillFiles(
   const normalizedFiles = [...byPath.values()].sort((a, b) =>
     a.path.localeCompare(b.path),
   );
-  return { label, files: normalizedFiles, byPath };
+  return { files: normalizedFiles, byPath };
 }
 
 function bundleFileMode(path: string, mode: number | undefined) {
@@ -1955,10 +1940,6 @@ function expandHostPath(path: string, home: string, cwd: string) {
   return path.startsWith("~/") ? join(home, path.slice(2)) : join(cwd, path);
 }
 
-function resolvePath(path: string, cwd: string) {
-  return resolve(cwd, path);
-}
-
 function parseFrontmatter(content: string) {
   const values = new Map<string, string>();
   for (const line of content.split(/\r?\n/)) {
@@ -1966,17 +1947,6 @@ function parseFrontmatter(content: string) {
     if (match) values.set(match[1], match[2].trim());
   }
   return values;
-}
-
-async function listSkillFiles(dir: string, base = dir): Promise<string[]> {
-  const files: string[] = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (skipName(entry.name)) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...(await listSkillFiles(full, base)));
-    if (entry.isFile()) files.push(relative(base, full).split(sep).join("/"));
-  }
-  return files.sort();
 }
 
 function skipName(name: string) {

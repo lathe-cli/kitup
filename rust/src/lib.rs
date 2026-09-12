@@ -395,7 +395,6 @@ struct BundleFile {
 
 #[derive(Clone, Debug)]
 struct NormalizedSkillBundle {
-    files: Vec<BundleFile>,
     by_path: BTreeMap<String, BundleFile>,
 }
 
@@ -907,7 +906,7 @@ pub fn compute_bundle_content_hash(bundle: &SkillBundle) -> io::Result<String> {
 
 fn content_hash(bundle: &NormalizedSkillBundle) -> String {
     let mut hash = Sha256::new();
-    for file in &bundle.files {
+    for file in bundle.by_path.values() {
         hash.update(file.path.as_bytes());
         hash.update([0]);
         hash.update(&file.contents);
@@ -1034,16 +1033,6 @@ pub fn run_bundled_skill_install_with_io<R: BufRead, W: Write>(
         });
     }
     render_install_summary(output, &plan)?;
-    if plan.installed.len() + plan.updated.len() == 0 {
-        return Ok(InstallWorkflowReport {
-            selection,
-            scope: workflow_scope,
-            plan: plan.clone(),
-            report: plan,
-            canceled: false,
-            dry_run: false,
-        });
-    }
     if selection.needs_confirmation && !prompt_confirmation(input, output)? {
         return Ok(InstallWorkflowReport {
             selection,
@@ -1416,7 +1405,7 @@ fn remove_managed_skill(
 
 fn copy_skill_bundle(bundle: &NormalizedSkillBundle, dest: &Path) -> io::Result<()> {
     fs::create_dir_all(dest)?;
-    for file in &bundle.files {
+    for file in bundle.by_path.values() {
         let to = dest.join(PathBuf::from(
             file.path.replace('/', std::path::MAIN_SEPARATOR_STR),
         ));
@@ -1435,7 +1424,7 @@ fn repair_skill_bundle_modes(
     write: bool,
 ) -> io::Result<bool> {
     let mut repaired = false;
-    for file in &bundle.files {
+    for file in bundle.by_path.values() {
         let to = dest.join(PathBuf::from(
             file.path.replace('/', std::path::MAIN_SEPARATOR_STR),
         ));
@@ -2169,8 +2158,7 @@ fn normalize_skill_files(files: Vec<SkillFile>) -> io::Result<NormalizedSkillBun
             },
         );
     }
-    let files = by_path.values().cloned().collect();
-    Ok(NormalizedSkillBundle { files, by_path })
+    Ok(NormalizedSkillBundle { by_path })
 }
 
 fn default_bundle_file_mode(path: &str) -> u32 {
@@ -2192,9 +2180,8 @@ fn normalize_bundle_path(value: &str) -> io::Result<Option<String>> {
             format!("invalid skill file path: {value}"),
         ));
     }
-    let parts: Vec<_> = value.split('/').collect();
-    for part in &parts {
-        if part.is_empty() || *part == "." || *part == ".." {
+    for part in value.split('/') {
+        if part.is_empty() || part == "." || part == ".." {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("invalid skill file path: {value}"),
@@ -2204,7 +2191,7 @@ fn normalize_bundle_path(value: &str) -> io::Result<Option<String>> {
             return Ok(None);
         }
     }
-    Ok(Some(parts.join("/")))
+    Ok(Some(value.to_string()))
 }
 
 #[cfg(unix)]

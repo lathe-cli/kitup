@@ -437,15 +437,9 @@ type bundleMetadata struct {
 	Explicit    bool
 }
 
-type bundleFile struct {
-	Path     string
-	Contents []byte
-	Mode     fs.FileMode
-}
-
 type normalizedSkillBundle struct {
-	Files  []bundleFile
-	ByPath map[string]bundleFile
+	Files  []SkillFile
+	ByPath map[string]SkillFile
 }
 
 var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -812,10 +806,6 @@ func RunBundledSkillInstall(opts InstallWorkflowOptions) (InstallWorkflowReport,
 			if info, err := file.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
 				opts.StdinTTY = true
 			}
-		} else if in == os.Stdin {
-			if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
-				opts.StdinTTY = true
-			}
 		}
 	}
 	out := opts.Out
@@ -884,9 +874,6 @@ func RunBundledSkillInstall(opts InstallWorkflowOptions) (InstallWorkflowReport,
 		return InstallWorkflowReport{Selection: selection, Scope: scope, Plan: plan, Report: report, DryRun: opts.DryRun}, nil
 	}
 	renderInstallSummary(out, plan)
-	if len(plan.Installed)+len(plan.Updated) == 0 {
-		return InstallWorkflowReport{Selection: selection, Scope: scope, Plan: plan, Report: plan}, nil
-	}
 	if selection.NeedsConfirmation {
 		confirmed, err := promptConfirmation(reader, out)
 		if err != nil {
@@ -1861,7 +1848,7 @@ func readFSBundleFiles(fsys fs.FS, root string) ([]SkillFile, error) {
 }
 
 func normalizeSkillFiles(files []SkillFile) (normalizedSkillBundle, error) {
-	byPath := map[string]bundleFile{}
+	byPath := map[string]SkillFile{}
 	for _, file := range files {
 		normalizedPath, include, err := normalizeBundlePath(file.Path)
 		if err != nil {
@@ -1877,14 +1864,14 @@ func normalizeSkillFiles(files []SkillFile) (normalizedSkillBundle, error) {
 		if mode == 0 {
 			mode = defaultBundleFileMode(normalizedPath)
 		}
-		byPath[normalizedPath] = bundleFile{Path: normalizedPath, Contents: file.Contents, Mode: mode}
+		byPath[normalizedPath] = SkillFile{Path: normalizedPath, Contents: file.Contents, Mode: mode}
 	}
 	paths := make([]string, 0, len(byPath))
 	for path := range byPath {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	normalized := normalizedSkillBundle{Files: make([]bundleFile, 0, len(paths)), ByPath: byPath}
+	normalized := normalizedSkillBundle{Files: make([]SkillFile, 0, len(paths)), ByPath: byPath}
 	for _, path := range paths {
 		normalized.Files = append(normalized.Files, byPath[path])
 	}
@@ -1915,14 +1902,6 @@ func normalizeBundlePath(value string) (string, bool, error) {
 		}
 	}
 	return strings.Join(parts, "/"), true, nil
-}
-
-func copySkillBundleDir(src, dest string) error {
-	bundle, err := readSkillBundle(DirectoryBundle(src))
-	if err != nil {
-		return err
-	}
-	return copySkillBundle(bundle, dest)
 }
 
 func skipName(name string) bool {

@@ -90,7 +90,6 @@ class BundleFile:
 class NormalizedSkillBundle:
     files: list[BundleFile]
     by_path: dict[str, BundleFile]
-    label: str | None = None
 
 
 @dataclass(frozen=True)
