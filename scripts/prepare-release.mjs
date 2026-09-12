@@ -26,6 +26,8 @@ const bump = positional[0];
 const packagePath = "ts/package.json";
 const cargoPath = "rust/Cargo.toml";
 const goCobraModPath = "go-cobra/go.mod";
+const exampleGoModPath = "examples/go/go.mod";
+const goWorkSumPath = "go.work.sum";
 const rustLockPath = "rust/Cargo.lock";
 const exampleRustLockPath = "examples/rust/Cargo.lock";
 const pythonPackagePath = "python/pyproject.toml";
@@ -42,6 +44,8 @@ const changedFiles = [
   rustLockPath,
   exampleRustLockPath,
   goCobraModPath,
+  exampleGoModPath,
+  goWorkSumPath,
   pythonPackagePath,
   pythonLockPath,
   examplePythonLockPath,
@@ -60,11 +64,13 @@ replaceOne(
   /^version = "([^"]+)"$/m,
   `version = "${nextVersion}"`,
 );
-replaceOne(
-  goCobraModPath,
-  /(github\.com\/lathe-cli\/kitup\/go\s+)v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/,
-  `$1${tag}`,
-);
+for (const path of [goCobraModPath, exampleGoModPath]) {
+  replaceOne(
+    path,
+    /(github\.com\/lathe-cli\/kitup\/go\s+)v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/,
+    `$1${tag}`,
+  );
+}
 
 if (dryRun) {
   console.log(`Would create branch: ${branch}`);
