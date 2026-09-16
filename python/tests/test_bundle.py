@@ -2,7 +2,6 @@ import hashlib
 from pathlib import Path
 
 from kitup import (
-    BaseOptions,
     InstallOptions,
     compute_bundle_content_hash,
     directory_bundle,
@@ -109,12 +108,9 @@ def test_resources_bundle_skips_symlinked_directories(tmp_path):
     )
 
 
-def test_resources_bundle_preserves_path_file_modes(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
+def test_resources_bundle_preserves_path_file_modes(base, tmp_path):
+    home = Path(base.home)
     root = tmp_path / "skill"
-    home.mkdir()
-    workspace.mkdir()
     (root / "scripts").mkdir(parents=True)
     (root / "bin").mkdir()
     (root / "SKILL.md").write_text(_skill_md(), encoding="utf-8")
@@ -127,7 +123,7 @@ def test_resources_bundle_preserves_path_file_modes(tmp_path):
 
     install_bundled_skill(
         InstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="example-cli",
             skill_bundle=resources_bundle(root),
             scope="user",
@@ -140,15 +136,14 @@ def test_resources_bundle_preserves_path_file_modes(tmp_path):
     assert (target / "bin" / "run.sh").stat().st_mode & 0o777 == 0o755
 
 
-def test_resources_bundle_installs_embedded_tree(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_resources_bundle_installs_embedded_tree(
+    base,
+):
+    home = Path(base.home)
 
     report = install_bundled_skill(
         InstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="example-cli",
             skill_bundle=resources_bundle(_repo_skills_basic()),
             scope="user",

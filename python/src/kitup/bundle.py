@@ -11,8 +11,8 @@ try:
 except ImportError:
     from importlib.abc import Traversable
 
-from ._github import fetch_github_directory
-from ._metadata import is_valid_skill_name
+from ._github import fetch_github_directory, fetch_github_directory_with_metadata
+from ._metadata import is_valid_skill_name, _metadata_text, _metadata_provenance
 from ._paths import normalize_bundle_path, resolve_path, skip_name
 from .types import (
     BundleFile,
@@ -234,3 +234,46 @@ def _parse_frontmatter(content: str) -> dict[str, str]:
         key, value = line.split(":", 1)
         fields[key] = value.strip()
     return fields
+
+
+def _resolve_bundle_and_metadata(
+    skill_bundle: object, *, cwd: str | None
+) -> tuple[object, dict[str, object]]:
+    if isinstance(skill_bundle, MetadataBundle):
+        normalized, metadata = _resolve_bundle_and_metadata(
+            skill_bundle.bundle, cwd=cwd
+        )
+        supplied = skill_bundle.metadata
+        provenance = {
+            **(_metadata_provenance(metadata) or {}),
+            **supplied.provenance,
+        }
+        metadata.update(
+            {
+                "source_id": supplied.source_id
+                or _metadata_text(metadata, "source_id"),
+                "cli_version": supplied.cli_version or None,
+                "cli_revision": supplied.cli_revision or None,
+                "provenance": provenance or None,
+                "explicit": True,
+            }
+        )
+        return normalized, metadata
+    if isinstance(skill_bundle, DirectoryBundle):
+        return normalize_directory_bundle(skill_bundle.path, cwd=cwd), {
+            "source": "bundled"
+        }
+    if isinstance(skill_bundle, FilesBundle):
+        return normalize_files_bundle(skill_bundle.files), {"source": "bundled"}
+    if isinstance(skill_bundle, GitHubBundle):
+        files, metadata = fetch_github_directory_with_metadata(skill_bundle.options)
+        return normalize_files_bundle(files), metadata
+    raise TypeError(f"unsupported bundle: {type(skill_bundle)!r}")
+
+
+def _is_github_bundle(skill_bundle: object) -> bool:
+    if isinstance(skill_bundle, GitHubBundle):
+        return True
+    if isinstance(skill_bundle, MetadataBundle):
+        return _is_github_bundle(skill_bundle.bundle)
+    return False

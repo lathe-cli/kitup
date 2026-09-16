@@ -41,6 +41,8 @@ scripts/sync-hosts.mjs   generated host constants
 
 TypeScript, Go, Rust, and Python SDKs live in `ts/`, `go/`, `rust/`, and `python/`.
 
+Each SDK separates bundle loading, host resolution, installation, and CLI workflow. Public entry points stay at the package root. Start with the workflow for selection and confirmation, the installer for lifecycle decisions, and storage or metadata for ownership and filesystem writes. See [the architecture map](docs/architecture.mmd) for the data flow.
+
 ## Common Commands
 
 ```bash
@@ -60,6 +62,10 @@ make check
 ```
 
 This validates the shared spec, fixtures, generated host constants, standalone Go modules, TypeScript, Go, Rust, Python, and examples.
+
+`scripts/golden.mjs` owns golden fixture preparation, the local GitHub server, and result and filesystem assertions. Each language's golden test invokes its native SDK and returns structured results. These repository tests require Node.js 24; the published Go, Rust, and Python SDKs do not require Node.js.
+
+The harness retains each SDK's existing hash order: TypeScript uses `localeCompare`, while Go, Rust, and Python use lexical order. It verifies each implementation against that order; this does not establish identical hashes across languages.
 
 ## Host Adapter Changes
 

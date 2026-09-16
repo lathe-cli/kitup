@@ -7,11 +7,10 @@ from .bundle import (
     validate_skill_bundle,
     with_bundle_metadata,
 )
-from .hosts import detect_hosts, load_host_spec, resolve_hosts
+from .hosts import detect_hosts, load_host_spec, resolve_hosts, resolve_install_targets
 from .install import (
     install_bundled_skill,
     plan_bundled_skill,
-    resolve_install_targets,
     read_installed_metadata,
     status_bundled_skill,
     uninstall_bundled_skill,

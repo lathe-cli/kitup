@@ -86,12 +86,6 @@ def resolve_install_selection(options: InstallSelectionOptions) -> InstallSelect
         )
 
     if explicit_agents:
-        if options.agents == "*":
-            return _install_selection(
-                [host.id for host in spec.hosts],
-                [],
-                stdin_tty and not options.yes,
-            )
         selected, errors = resolve_hosts(options.agents, spec.hosts)
         if errors:
             return _error_selection(errors, [])
@@ -112,43 +106,32 @@ def resolve_install_selection(options: InstallSelectionOptions) -> InstallSelect
         if not detected_host_ids:
             return _error_selection([{"reason": "no-detected-hosts"}], [])
         return _install_selection(detected_host_ids, detected_host_ids, False)
-    if not detected_host_ids:
-        return _select_agents_selection(
-            [host.id for host in spec.hosts], detected_host_ids, []
-        )
     if len(detected_host_ids) == 1:
         return _install_selection(detected_host_ids, detected_host_ids, True)
-    return _select_agents_selection(detected_host_ids, detected_host_ids, [])
+    return InstallSelection(
+        action="select-agents",
+        selected_host_ids=[],
+        candidate_host_ids=detected_host_ids or [host.id for host in spec.hosts],
+        detected_host_ids=detected_host_ids,
+        needs_confirmation=True,
+        errors=[],
+    )
 
 
 def classify_install_workflow_exit(
     report: InstallWorkflowReport | dict[str, object],
 ) -> InstallWorkflowExit:
     if _workflow_value(report, "canceled"):
-        return InstallWorkflowExit(
-            ok=False, code="canceled", message=INSTALL_UX["canceled"]
-        )
-    selection = _workflow_value(report, "selection")
-    if _workflow_value(selection, "errors"):
-        return InstallWorkflowExit(
-            ok=False,
-            code="selection-error",
-            message=INSTALL_UX["selection_error"],
-        )
-    run_report = _workflow_value(report, "report")
-    if _workflow_value(run_report, "conflicts"):
-        return InstallWorkflowExit(
-            ok=False,
-            code="conflict",
-            message=INSTALL_UX["conflict"],
-        )
-    if _workflow_value(run_report, "errors"):
-        return InstallWorkflowExit(
-            ok=False,
-            code="error",
-            message=INSTALL_UX["failed"],
-        )
-    return InstallWorkflowExit(ok=True, code="ok", message="")
+        code, message = "canceled", INSTALL_UX["canceled"]
+    elif _workflow_value(_workflow_value(report, "selection"), "errors"):
+        code, message = "selection-error", INSTALL_UX["selection_error"]
+    elif _workflow_value(_workflow_value(report, "report"), "conflicts"):
+        code, message = "conflict", INSTALL_UX["conflict"]
+    elif _workflow_value(_workflow_value(report, "report"), "errors"):
+        code, message = "error", INSTALL_UX["failed"]
+    else:
+        code, message = "ok", ""
+    return InstallWorkflowExit(ok=code == "ok", code=code, message=message)
 
 
 def install_flag_error(errors: list[dict[str, str]]) -> Exception | None:
@@ -187,147 +170,81 @@ def run_bundled_skill_install_with_io(
 ) -> InstallWorkflowReport:
     reader = _LineReader(input)
     writer = _OutputWriter(output)
-    scope, scope_error = _resolve_workflow_scope(
-        reader=reader,
-        output=writer,
-        requested=options.install.scope,
-        scope_set=options.scope_set,
-        prompt_scope=options.prompt_scope,
-        configured_default=options.default_scope,
-        yes=options.yes,
-        stdin_tty=options.stdin_tty,
-    )
-    if scope_error is not None:
-        _render_selection_errors(writer, scope_error)
-        return InstallWorkflowReport(
-            selection=scope_error,
-            scope=scope,
-            plan=InstallReport(),
-            report=InstallReport(),
-            canceled=False,
-            dry_run=options.dry_run,
+    scope, selection = _resolve_workflow_scope(reader, writer, options)
+    if selection is None:
+        selection = resolve_install_selection(
+            InstallSelectionOptions(
+                base=options.install.base,
+                scope=scope,
+                agents=options.install.agents,
+                yes=options.yes,
+                stdin_tty=options.stdin_tty,
+                current_agent=options.current_agent,
+            )
         )
-
-    selection = resolve_install_selection(
-        InstallSelectionOptions(
-            base=options.install.base,
-            scope=scope,
-            agents=options.install.agents,
-            yes=options.yes,
-            stdin_tty=options.stdin_tty,
-            current_agent=options.current_agent,
-        )
+    result = InstallWorkflowReport(
+        selection=selection,
+        scope=scope,
+        plan=InstallReport(),
+        report=InstallReport(),
+        canceled=False,
+        dry_run=options.dry_run,
     )
     if selection.action == "error":
         _render_selection_errors(writer, selection)
-        return InstallWorkflowReport(
-            selection=selection,
-            scope=scope,
-            plan=InstallReport(),
-            report=InstallReport(),
-            canceled=False,
-            dry_run=options.dry_run,
-        )
+        return result
     if selection.action == "select-agents":
         hosts = load_host_spec(options.install.base.hosts_file).hosts
-        selected_host_ids = _prompt_agent_selection(reader, writer, selection, hosts)
+        selected = _prompt_agent_selection(reader, writer, selection, hosts)
         selection = _install_selection(
-            selected_host_ids,
-            selection.detected_host_ids,
-            options.stdin_tty and not options.yes,
+            selected, selection.detected_host_ids, options.stdin_tty and not options.yes
         )
-        if not selected_host_ids:
-            return InstallWorkflowReport(
-                selection=selection,
-                scope=scope,
-                plan=InstallReport(),
-                report=InstallReport(),
-                canceled=True,
-                dry_run=options.dry_run,
-            )
+        result.selection = selection
+        if not selected:
+            result.canceled = True
+            return result
 
     install_options = replace(
-        options.install,
-        scope=scope,
-        agents=selection.selected_host_ids,
+        options.install, scope=scope, agents=selection.selected_host_ids
     )
     plan = plan_bundled_skill(install_options)
-    if not _has_visible_install_plan(plan):
-        return InstallWorkflowReport(
-            selection=selection,
-            scope=scope,
-            plan=plan,
-            report=plan,
-            canceled=False,
-            dry_run=options.dry_run,
-        )
-
+    result.plan = result.report = plan
+    if not (plan.installed or plan.updated or plan.conflicts or plan.errors):
+        return result
     if options.dry_run:
         _render_install_summary(writer, plan)
-        return InstallWorkflowReport(
-            selection=selection,
-            scope=scope,
-            plan=plan,
-            report=plan,
-            canceled=False,
-            dry_run=True,
-        )
-    if len(plan.conflicts) + len(plan.errors) > 0:
-        return InstallWorkflowReport(
-            selection=selection,
-            scope=scope,
-            plan=plan,
-            report=replace(plan, installed=[], updated=[]),
-            canceled=False,
-            dry_run=False,
-        )
+        return result
+    if plan.conflicts or plan.errors:
+        result.report = replace(plan, installed=[], updated=[])
+        return result
     _render_install_summary(writer, plan)
     if selection.needs_confirmation and not _prompt_confirmation(reader, writer):
-        return InstallWorkflowReport(
-            selection=selection,
-            scope=scope,
-            plan=plan,
-            report=InstallReport(),
-            canceled=True,
-            dry_run=False,
-        )
-
-    report = install_bundled_skill(install_options)
-    return InstallWorkflowReport(
-        selection=selection,
-        scope=scope,
-        plan=plan,
-        report=report,
-        canceled=False,
-        dry_run=False,
-    )
+        result.report = InstallReport()
+        result.canceled = True
+        return result
+    result.report = install_bundled_skill(install_options)
+    return result
 
 
 def _resolve_workflow_scope(
-    *,
     reader: "_LineReader",
-    output: "_OutputWriter",
-    requested: Scope,
-    scope_set: bool,
-    prompt_scope: bool,
-    configured_default: Scope,
-    yes: bool,
-    stdin_tty: bool,
+    output: object,
+    options: InstallWorkflowOptions,
 ) -> tuple[Scope | str, InstallSelection | None]:
-    default_scope = configured_default or "user"
-    scope = requested or default_scope
-    if scope_set or not prompt_scope:
+    default_scope = options.default_scope or "user"
+    scope = options.install.scope or default_scope
+    if options.scope_set or not options.prompt_scope:
         return scope, None
-    if yes:
+    if options.yes:
         return default_scope, None
-    if not stdin_tty:
+    if not options.stdin_tty:
         return "", _error_selection([{"reason": "scope-selection-required"}], [])
     return _prompt_scope_selection(reader, output, default_scope), None
 
 
 def _prompt_scope_selection(
     reader: "_LineReader",
-    output: "_OutputWriter",
+    output: object,
     default_scope: Scope,
 ) -> Scope:
     while True:
@@ -354,7 +271,7 @@ def _parse_scope_selection(line: str, default_scope: Scope) -> Scope | None:
 
 def _prompt_agent_selection(
     reader: "_LineReader",
-    output: "_OutputWriter",
+    output: object,
     selection: InstallSelection,
     hosts: list[object],
 ) -> list[str]:
@@ -407,13 +324,13 @@ def _parse_agent_selection(
     return selected
 
 
-def _prompt_confirmation(reader: "_LineReader", output: "_OutputWriter") -> bool:
+def _prompt_confirmation(reader: "_LineReader", output: object) -> bool:
     output.write(INSTALL_UX["proceed"])
     line = (reader.read_line() or "").strip().lower()
     return line in {"y", "yes"}
 
 
-def _render_install_summary(output: "_OutputWriter", report: InstallReport) -> None:
+def _render_install_summary(output: object, report: InstallReport) -> None:
     for item in [*report.installed, *report.updated]:
         for host_id in _summary_hosts(item):
             _write_line(
@@ -429,25 +346,13 @@ def _summary_hosts(item: object) -> list[str]:
     return list(host_ids or [])
 
 
-def _render_selection_errors(
-    output: "_OutputWriter", selection: InstallSelection
-) -> None:
+def _render_selection_errors(output: object, selection: InstallSelection) -> None:
     for error in selection.errors:
         _write_line(output, f"{INSTALL_UX['error_prefix']} {error['reason']}")
 
 
-def _write_line(output: "_OutputWriter", line: str) -> None:
+def _write_line(output: object, line: str) -> None:
     output.write(f"{line}\n")
-
-
-def _has_visible_install_plan(report: InstallReport) -> bool:
-    return (
-        len(report.installed)
-        + len(report.updated)
-        + len(report.conflicts)
-        + len(report.errors)
-        > 0
-    )
 
 
 def _install_selection(
@@ -467,32 +372,10 @@ def _install_selection(
     )
 
 
-def _select_agents_selection(
-    candidate_host_ids: list[str],
-    detected_host_ids: list[str],
-    selected_host_ids: list[str],
-) -> InstallSelection:
-    return InstallSelection(
-        action="select-agents",
-        selected_host_ids=selected_host_ids,
-        candidate_host_ids=candidate_host_ids,
-        detected_host_ids=detected_host_ids,
-        needs_confirmation=True,
-        errors=[],
-    )
-
-
 def _error_selection(
     errors: list[dict[str, str]], detected_host_ids: list[str]
 ) -> InstallSelection:
-    return InstallSelection(
-        action="error",
-        selected_host_ids=[],
-        candidate_host_ids=[],
-        detected_host_ids=detected_host_ids,
-        needs_confirmation=False,
-        errors=list(errors),
-    )
+    return _install_selection([], detected_host_ids, False, errors)
 
 
 def _add_universal_host(selected: list[object], hosts: list[object]) -> list[object]:
@@ -532,10 +415,7 @@ class _LineReader:
             and hasattr(source, "readline")
             else None
         )
-        self._lines: list[str] = (
-            [] if self._stream is not None else list(self._iter_lines(source))
-        )
-        self._index = 0
+        self._lines = iter([] if self._stream is not None else self._iter_lines(source))
 
     def read_line(self) -> str | None:
         if self._stream is not None:
@@ -546,11 +426,7 @@ class _LineReader:
             if line == "":
                 return None
             return line.rstrip("\n").rstrip("\r")
-        if self._index >= len(self._lines):
-            return None
-        line = self._lines[self._index]
-        self._index += 1
-        return line
+        return next(self._lines, None)
 
     def _iter_lines(self, source: object | None) -> Iterable[str]:
         if source is None:
@@ -580,6 +456,5 @@ class _OutputWriter:
         self._target = target
 
     def write(self, chunk: str) -> None:
-        if self._target is None:
-            return
-        self._target.write(chunk)
+        if self._target is not None:
+            self._target.write(chunk)

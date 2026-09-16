@@ -451,6 +451,8 @@ for (const [group, name, command, args, cwd, env] of [
       "../scripts/check.mjs",
       "../scripts/check-go-modules.mjs",
       "../scripts/prepare-release.mjs",
+      "../scripts/golden.mjs",
+      "../scripts/golden.d.mts",
     ],
     rootPath,
   ],
