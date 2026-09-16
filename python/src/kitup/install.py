@@ -1,38 +1,33 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import stat
 import shutil
 import tempfile
 from pathlib import Path
 
-from ._github import fetch_github_directory_with_metadata
 from ._metadata import (
-    is_valid_skill_name,
+    _installed_metadata,
+    _installed_metadata_dict,
+    ownership_conflict,
     read_install_metadata,
     write_install_metadata,
 )
 from .bundle import (
-    DirectoryBundle,
-    FilesBundle,
-    GitHubBundle,
-    MetadataBundle,
+    _resolve_bundle_and_metadata,
+    _is_github_bundle,
     copy_normalized_bundle,
     compute_normalized_bundle_content_hash,
-    normalize_directory_bundle,
-    normalize_files_bundle,
     validate_normalized_skill_bundle,
 )
-from .hosts import detect_hosts, load_host_spec, resolve_hosts
+from .hosts import _resolve_install_targets_with_errors
 from .types import (
-    BaseOptions,
     BundleFile,
-    Host,
     InstalledMetadata,
     InstalledTarget,
     InstallOptions,
     InstallReport,
     KitupError,
-    Scope,
     StatusOptions,
     StatusReport,
     TargetError,
@@ -44,116 +39,19 @@ from .types import (
 )
 
 
-def expand_host_path(path: str, *, home: Path, cwd: Path) -> Path:
-    if path.startswith("~/"):
-        return home / path[2:]
-    return cwd / path
-
-
-def choose_scope_path(
-    host: Host,
-    *,
-    scope: Scope,
-    home: Path,
-    cwd: Path,
-    skill_name: str,
-) -> Path | None:
-    paths = host.user_skills_dirs if scope == "user" else host.project_skills_dirs
-    existing = [
-        expanded
-        for path in paths
-        if (expanded := expand_host_path(path, home=home, cwd=cwd)).is_dir()
-    ]
-    for root in existing:
-        metadata = read_install_metadata(root / skill_name)
-        if metadata and metadata.get("skillName") == skill_name:
-            return root
-    if existing:
-        return existing[0]
-    if not paths:
-        return None
-    return expand_host_path(paths[0], home=home, cwd=cwd)
-
-
-def _uninstall_scope_paths(
-    host: Host,
-    *,
-    scope: Scope,
-    home: Path,
-    cwd: Path,
-    skill_name: str,
-    app_id: str,
-) -> list[Path]:
-    paths = host.user_skills_dirs if scope == "user" else host.project_skills_dirs
-    owned = []
-    for path in paths:
-        root = expand_host_path(path, home=home, cwd=cwd)
-        metadata = read_install_metadata(root / skill_name)
-        if (
-            metadata
-            and metadata.get("skillName") == skill_name
-            and metadata.get("appId") == app_id
-        ):
-            owned.append(root)
-    if owned:
-        return owned
-    fallback = choose_scope_path(
-        host,
-        scope=scope,
-        home=home,
-        cwd=cwd,
-        skill_name=skill_name,
-    )
-    return [fallback] if fallback is not None else []
-
-
-def resolve_install_targets(
-    options: BaseOptions,
-    agents: str | list[str] | None,
-    scope: Scope,
-    skill_name: str,
-) -> list[TargetGroup]:
-    targets, _ = _resolve_install_targets_with_errors(
-        options, agents, scope, skill_name
-    )
-    return targets
-
-
-def empty_install_report(errors: list[TargetError] | None = None) -> InstallReport:
-    return InstallReport(errors=errors or [])
-
-
-def empty_uninstall_report(errors: list[TargetError] | None = None) -> UninstallReport:
-    return UninstallReport(errors=errors or [])
-
-
-def empty_status_report(errors: list[TargetError] | None = None) -> StatusReport:
-    return StatusReport(errors=errors or [])
-
-
 def target_result(target: TargetGroup) -> TargetResult:
-    if len(target.host_ids) == 1:
-        return TargetResult(
-            host_id=target.host_ids[0],
-            skill_name=target.skill_name,
-            target_dir=target.target_dir,
-        )
+    hosts = (
+        {"host_id": target.host_ids[0]}
+        if len(target.host_ids) == 1
+        else {"host_ids": list(target.host_ids)}
+    )
     return TargetResult(
-        host_ids=list(target.host_ids),
-        skill_name=target.skill_name,
-        target_dir=target.target_dir,
+        skill_name=target.skill_name, target_dir=target.target_dir, **hosts
     )
 
 
 def target_status(target: TargetGroup, reason: str) -> TargetStatus:
-    result = target_result(target)
-    return TargetStatus(
-        host_id=result.host_id,
-        host_ids=result.host_ids,
-        skill_name=result.skill_name,
-        target_dir=result.target_dir,
-        reason=reason,
-    )
+    return TargetStatus(**asdict(target_result(target)), reason=reason)
 
 
 def plan_bundled_skill(options: InstallOptions) -> InstallReport:
@@ -172,9 +70,6 @@ def write_managed_bundle(
     target_dir: Path,
     *,
     files: list[BundleFile],
-    app_id: str,
-    skill_name: str,
-    digest: str,
     metadata: dict[str, object],
     replace: bool,
 ) -> None:
@@ -189,13 +84,7 @@ def write_managed_bundle(
     try:
         staged_dir.chmod(0o755)
         copy_normalized_bundle(files, staged_dir)
-        write_bundle_metadata(
-            staged_dir,
-            app_id=app_id,
-            skill_name=skill_name,
-            digest=digest,
-            metadata=metadata,
-        )
+        write_install_metadata(staged_dir, metadata)
         if replace and target_dir.exists():
             backup_dir = Path(
                 tempfile.mkdtemp(
@@ -218,8 +107,7 @@ def write_managed_bundle(
 
 def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
     if not options.app_id:
-        return empty_install_report([TargetError(reason="invalid-app-id")])
-
+        return InstallReport(errors=[TargetError(reason="invalid-app-id")])
     try:
         normalized, bundle_metadata = _resolve_bundle_and_metadata(
             options.skill_bundle, cwd=options.base.cwd
@@ -230,109 +118,45 @@ def install_or_plan(options: InstallOptions, *, write: bool) -> InstallReport:
             if _is_github_bundle(options.skill_bundle)
             else "invalid-skill-bundle"
         )
-        return empty_install_report([TargetError(reason=reason)])
-
+        return InstallReport(errors=[TargetError(reason=reason)])
     info = validate_normalized_skill_bundle(normalized)
     if not info.valid or not info.skill_name:
-        return empty_install_report(
-            [TargetError(reason=info.error_code or "invalid-skill-bundle")]
+        return InstallReport(
+            errors=[TargetError(reason=info.error_code or "invalid-skill-bundle")]
         )
-
     digest = compute_normalized_bundle_content_hash(normalized)
-    targets, errors = _resolve_install_targets_with_errors(
-        options.base,
-        options.agents,
-        options.scope,
-        info.skill_name,
+    desired = _installed_metadata_dict(
+        app_id=options.app_id,
+        skill_name=info.skill_name,
+        digest=digest,
+        metadata=bundle_metadata,
     )
-    report = empty_install_report(errors)
+    targets, errors = _resolve_install_targets_with_errors(
+        options.base, options.agents, options.scope, info.skill_name
+    )
+    report = InstallReport(errors=errors)
     for target in targets:
-        result = target_result(target)
         target_dir = Path(target.target_dir)
         metadata = read_install_metadata(target_dir)
-
-        if not target_dir.exists():
-            if write:
-                write_managed_bundle(
-                    target_dir,
-                    app_id=options.app_id,
-                    skill_name=info.skill_name,
-                    digest=digest,
-                    metadata=bundle_metadata,
-                    files=normalized.files,
-                    replace=False,
-                )
-            report.installed.append(result)
+        exists = target_dir.exists()
+        conflict = ownership_conflict(metadata, options.app_id, info.skill_name)
+        if exists and conflict and not options.force:
+            report.conflicts.append(target_status(target, conflict))
             continue
-
-        if metadata is None or metadata.get("skillName") != info.skill_name:
-            if options.force:
-                if write:
-                    write_managed_bundle(
-                        target_dir,
-                        app_id=options.app_id,
-                        skill_name=info.skill_name,
-                        digest=digest,
-                        metadata=bundle_metadata,
-                        files=normalized.files,
-                        replace=True,
-                    )
-                report.updated.append(result)
-            else:
-                report.conflicts.append(target_status(target, "unmanaged"))
-            continue
-        if metadata.get("appId") != options.app_id:
-            if options.force:
-                if write:
-                    write_managed_bundle(
-                        target_dir,
-                        app_id=options.app_id,
-                        skill_name=info.skill_name,
-                        digest=digest,
-                        metadata=bundle_metadata,
-                        files=normalized.files,
-                        replace=True,
-                    )
-                report.updated.append(result)
-            else:
-                report.conflicts.append(target_status(target, "owner-mismatch"))
-            continue
-        if metadata.get("hash") == digest:
+        if exists and not conflict and metadata.get("hash") == digest:
             repaired = repair_bundle_modes(normalized.files, target_dir, write=write)
-            metadata_changed = bool(
-                bundle_metadata.get("explicit")
-            ) and metadata != _installed_metadata_dict(
-                app_id=options.app_id,
-                skill_name=info.skill_name,
-                digest=digest,
-                metadata=bundle_metadata,
-            )
-            if repaired or metadata_changed:
-                if write:
-                    write_bundle_metadata(
-                        target_dir,
-                        app_id=options.app_id,
-                        skill_name=info.skill_name,
-                        digest=digest,
-                        metadata=bundle_metadata,
-                    )
-                report.updated.append(result)
-            else:
+            if not repaired and not (
+                bundle_metadata.get("explicit") and metadata != desired
+            ):
                 report.skipped.append(target_status(target, "unchanged"))
-            continue
-
-        if write:
+                continue
+            if write:
+                write_install_metadata(target_dir, desired)
+        elif write:
             write_managed_bundle(
-                target_dir,
-                app_id=options.app_id,
-                skill_name=info.skill_name,
-                digest=digest,
-                metadata=bundle_metadata,
-                files=normalized.files,
-                replace=True,
+                target_dir, files=normalized.files, metadata=desired, replace=exists
             )
-        report.updated.append(result)
-
+        (report.updated if exists else report.installed).append(target_result(target))
     return report
 
 
@@ -353,31 +177,9 @@ def repair_bundle_modes(
     return repaired
 
 
-def write_bundle_metadata(
-    target_dir: Path,
-    *,
-    app_id: str,
-    skill_name: str,
-    digest: str,
-    metadata: dict[str, object],
-) -> None:
-    write_install_metadata(
-        target_dir,
-        app_id=app_id,
-        skill_name=skill_name,
-        digest=digest,
-        source=str(metadata["source"]),
-        source_id=_metadata_text(metadata, "source_id"),
-        version=_metadata_text(metadata, "version"),
-        cli_version=_metadata_text(metadata, "cli_version"),
-        cli_revision=_metadata_text(metadata, "cli_revision"),
-        provenance=_metadata_provenance(metadata),
-    )
-
-
 def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
     if not options.app_id:
-        return empty_uninstall_report([TargetError(reason="invalid-app-id")])
+        return UninstallReport(errors=[TargetError(reason="invalid-app-id")])
 
     targets, errors = _resolve_install_targets_with_errors(
         options.base,
@@ -386,7 +188,7 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
         options.skill_name,
         uninstall_app_id=options.app_id,
     )
-    report = empty_uninstall_report(errors)
+    report = UninstallReport(errors=errors)
     for target in targets:
         result = target_result(target)
         target_dir = Path(target.target_dir)
@@ -395,11 +197,9 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
         if not target_dir.exists():
             report.skipped.append(target_status(target, "missing"))
             continue
-        if metadata is None or metadata.get("skillName") != options.skill_name:
-            report.conflicts.append(target_status(target, "unmanaged"))
-            continue
-        if metadata.get("appId") != options.app_id:
-            report.conflicts.append(target_status(target, "owner-mismatch"))
+        conflict = ownership_conflict(metadata, options.app_id, options.skill_name)
+        if conflict:
+            report.conflicts.append(target_status(target, conflict))
             continue
 
         reason = _remove_managed_skill(
@@ -417,7 +217,7 @@ def uninstall_bundled_skill(options: UninstallOptions) -> UninstallReport:
 
 def status_bundled_skill(options: StatusOptions) -> StatusReport:
     if not options.app_id:
-        return empty_status_report([TargetError(reason="invalid-app-id")])
+        return StatusReport(errors=[TargetError(reason="invalid-app-id")])
     targets, errors = _resolve_install_targets_with_errors(
         options.base,
         options.agents,
@@ -425,24 +225,21 @@ def status_bundled_skill(options: StatusOptions) -> StatusReport:
         options.skill_name,
         uninstall_app_id=options.app_id,
     )
-    report = empty_status_report(errors)
+    report = StatusReport(errors=errors)
     for target in targets:
         result = target_result(target)
         target_dir = Path(target.target_dir)
         metadata = read_install_metadata(target_dir)
         if not target_dir.exists():
             report.missing.append(result)
-        elif metadata is None or metadata.get("skillName") != options.skill_name:
-            report.conflicts.append(target_status(target, "unmanaged"))
-        elif metadata.get("appId") != options.app_id:
-            report.conflicts.append(target_status(target, "owner-mismatch"))
+        elif conflict := ownership_conflict(
+            metadata, options.app_id, options.skill_name
+        ):
+            report.conflicts.append(target_status(target, conflict))
         else:
             report.installed.append(
                 InstalledTarget(
-                    host_id=result.host_id,
-                    host_ids=result.host_ids,
-                    skill_name=result.skill_name,
-                    target_dir=result.target_dir,
+                    **asdict(result),
                     metadata=_installed_metadata(metadata),
                 )
             )
@@ -461,49 +258,6 @@ def read_installed_metadata(
     return _installed_metadata(metadata)
 
 
-def _resolve_bundle_and_metadata(
-    skill_bundle: object, *, cwd: str | None
-) -> tuple[object, dict[str, object]]:
-    if isinstance(skill_bundle, MetadataBundle):
-        normalized, metadata = _resolve_bundle_and_metadata(
-            skill_bundle.bundle, cwd=cwd
-        )
-        supplied = skill_bundle.metadata
-        provenance = {
-            **(_metadata_provenance(metadata) or {}),
-            **supplied.provenance,
-        }
-        metadata.update(
-            {
-                "source_id": supplied.source_id
-                or _metadata_text(metadata, "source_id"),
-                "cli_version": supplied.cli_version or None,
-                "cli_revision": supplied.cli_revision or None,
-                "provenance": provenance or None,
-                "explicit": True,
-            }
-        )
-        return normalized, metadata
-    if isinstance(skill_bundle, DirectoryBundle):
-        return normalize_directory_bundle(skill_bundle.path, cwd=cwd), {
-            "source": "bundled"
-        }
-    if isinstance(skill_bundle, FilesBundle):
-        return normalize_files_bundle(skill_bundle.files), {"source": "bundled"}
-    if isinstance(skill_bundle, GitHubBundle):
-        files, metadata = fetch_github_directory_with_metadata(skill_bundle.options)
-        return normalize_files_bundle(files), metadata
-    raise TypeError(f"unsupported bundle: {type(skill_bundle)!r}")
-
-
-def _is_github_bundle(skill_bundle: object) -> bool:
-    if isinstance(skill_bundle, GitHubBundle):
-        return True
-    if isinstance(skill_bundle, MetadataBundle):
-        return _is_github_bundle(skill_bundle.bundle)
-    return False
-
-
 def _remove_managed_skill(
     target_dir: Path, *, app_id: str, skill_name: str
 ) -> str | None:
@@ -516,11 +270,7 @@ def _remove_managed_skill(
     quarantine.rmdir()
     target_dir.replace(quarantine)
     metadata = read_install_metadata(quarantine)
-    reason = None
-    if metadata is None or metadata.get("skillName") != skill_name:
-        reason = "unmanaged"
-    elif metadata.get("appId") != app_id:
-        reason = "owner-mismatch"
+    reason = ownership_conflict(metadata, app_id, skill_name)
     if reason is not None:
         if target_dir.exists():
             raise KitupError(f"cannot restore changed install: {target_dir}")
@@ -528,124 +278,3 @@ def _remove_managed_skill(
         return reason
     shutil.rmtree(quarantine)
     return None
-
-
-def _installed_metadata(payload: dict[str, object]) -> InstalledMetadata:
-    return InstalledMetadata(
-        schema_version=1,
-        app_id=str(payload["appId"]),
-        skill_name=str(payload["skillName"]),
-        source=str(payload["source"]),
-        hash=str(payload["hash"]),
-        source_id=_nonempty_metadata_text(payload, "sourceId"),
-        version=_nonempty_metadata_text(payload, "version"),
-        cli_version=_nonempty_metadata_text(payload, "cliVersion"),
-        cli_revision=_nonempty_metadata_text(payload, "cliRevision"),
-        provenance=_metadata_provenance(payload) or None,
-    )
-
-
-def _installed_metadata_dict(
-    *, app_id: str, skill_name: str, digest: str, metadata: dict[str, object]
-) -> dict[str, object]:
-    value: dict[str, object] = {
-        "schemaVersion": 1,
-        "appId": app_id,
-        "skillName": skill_name,
-        "source": metadata["source"],
-        "hash": digest,
-    }
-    for source_key, target_key in (
-        ("source_id", "sourceId"),
-        ("version", "version"),
-        ("cli_version", "cliVersion"),
-        ("cli_revision", "cliRevision"),
-    ):
-        field_value = _metadata_text(metadata, source_key)
-        if field_value is not None:
-            value[target_key] = field_value
-    provenance = _metadata_provenance(metadata)
-    if provenance:
-        value["provenance"] = provenance
-    return value
-
-
-def _resolve_install_targets_with_errors(
-    options: BaseOptions,
-    agents: str | list[str] | None,
-    scope: Scope,
-    skill_name: str,
-    *,
-    uninstall_app_id: str | None = None,
-) -> tuple[list[TargetGroup], list[TargetError]]:
-    if not is_valid_skill_name(skill_name):
-        return [], [TargetError(reason="invalid-skill-name", skill_name=skill_name)]
-
-    spec = load_host_spec(options.hosts_file)
-    home = Path(options.home).expanduser() if options.home else Path.home()
-    cwd = Path(options.cwd) if options.cwd else Path.cwd()
-    if agents in (None, "auto"):
-        selected = detect_hosts(options, scope)
-        errors: list[TargetError] = []
-    else:
-        selected, resolution_errors = resolve_hosts(agents, spec.hosts)
-        errors = [
-            TargetError(reason=error["reason"], agent=error["agent"])
-            for error in resolution_errors
-        ]
-
-    by_target: dict[str, TargetGroup] = {}
-    for host in selected:
-        if uninstall_app_id is not None:
-            roots = _uninstall_scope_paths(
-                host,
-                scope=scope,
-                home=home,
-                cwd=cwd,
-                skill_name=skill_name,
-                app_id=uninstall_app_id,
-            )
-        else:
-            root = choose_scope_path(
-                host,
-                scope=scope,
-                home=home,
-                cwd=cwd,
-                skill_name=skill_name,
-            )
-            roots = [root] if root is not None else []
-        if not roots:
-            errors.append(
-                TargetError(
-                    reason="unsupported-scope",
-                    host_id=host.id,
-                    skill_name=skill_name,
-                    scope=scope,
-                )
-            )
-            continue
-        for root in roots:
-            target_dir = str(root / skill_name)
-            group = by_target.get(target_dir)
-            if group is None:
-                group = TargetGroup(skill_name=skill_name, target_dir=target_dir)
-                by_target[target_dir] = group
-            if host.id not in group.host_ids:
-                group.host_ids.append(host.id)
-
-    return [by_target[path] for path in sorted(by_target)], errors
-
-
-def _metadata_text(metadata: dict[str, object], key: str) -> str | None:
-    value = metadata.get(key)
-    return value if isinstance(value, str) else None
-
-
-def _nonempty_metadata_text(metadata: dict[str, object], key: str) -> str | None:
-    value = _metadata_text(metadata, key)
-    return value or None
-
-
-def _metadata_provenance(metadata: dict[str, object]) -> dict[str, object] | None:
-    value = metadata.get("provenance")
-    return value if isinstance(value, dict) else None

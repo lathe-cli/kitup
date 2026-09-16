@@ -91,6 +91,13 @@ func NewUninstallCommand(opts Options) *cobra.Command {
 		Short:        "Uninstall bundled Agent Skill",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			emit := func(report kitup.UninstallReport) error {
+				if jsonOutput {
+					return writeJSON(output(cmd, opts), report)
+				}
+				renderUninstallReport(output(cmd, opts), report)
+				return nil
+			}
 			parsed := kitup.ParseInstallFlags(kitup.InstallFlagValues{Scope: scope, ScopeSet: true, Agents: agents, Yes: yes})
 			if err := kitup.InstallFlagError(parsed.Errors); err != nil {
 				return err
@@ -115,22 +122,13 @@ func NewUninstallCommand(opts Options) *cobra.Command {
 			}
 			if len(status.Conflicts)+len(status.Errors) > 0 {
 				report := uninstallReportFromStatus(status)
-				if jsonOutput {
-					if err := writeJSON(output(cmd, opts), report); err != nil {
-						return err
-					}
-				} else {
-					renderUninstallReport(output(cmd, opts), report)
+				if err := emit(report); err != nil {
+					return err
 				}
 				return errors.New("kitup: uninstall has conflicts")
 			}
 			if len(status.Installed) == 0 {
-				report := uninstallReportFromStatus(status)
-				if jsonOutput {
-					return writeJSON(output(cmd, opts), report)
-				}
-				renderUninstallReport(output(cmd, opts), report)
-				return nil
+				return emit(uninstallReportFromStatus(status))
 			}
 			promptOut := output(cmd, opts)
 			if jsonOutput {
@@ -162,12 +160,8 @@ func NewUninstallCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOutput {
-				if err := writeJSON(output(cmd, opts), report); err != nil {
-					return err
-				}
-			} else {
-				renderUninstallReport(output(cmd, opts), report)
+			if err := emit(report); err != nil {
+				return err
 			}
 			if len(report.Conflicts)+len(report.Errors) > 0 {
 				return errors.New("kitup: uninstall failed")
@@ -183,35 +177,21 @@ func NewUninstallCommand(opts Options) *cobra.Command {
 }
 
 func NewInstallCommand(opts Options) *cobra.Command {
-	scope := ""
-	var agents []string
-	var yes bool
-	var dryRun bool
-	var force bool
+	flags := kitup.InstallFlagValues{}
 
 	cmd := &cobra.Command{
 		Use:          kitup.InstallUX.InstallUse,
 		Short:        kitup.InstallUX.InstallShort,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			parsed := kitup.ParseInstallFlags(kitup.InstallFlagValues{
-				Scope:    scope,
-				ScopeSet: cmd.Flags().Changed("scope"),
-				Agents:   agents,
-				Yes:      yes,
-				DryRun:   dryRun,
-				Force:    force,
-			})
+			flags.ScopeSet = cmd.Flags().Changed("scope")
+			parsed := kitup.ParseInstallFlags(flags)
 			if err := kitup.InstallFlagError(parsed.Errors); err != nil {
 				return err
 			}
 			report, err := kitup.RunBundledSkillInstall(kitup.InstallWorkflowOptions{
 				InstallOptions: kitup.InstallOptions{
-					BaseOptions: kitup.BaseOptions{
-						Home:      opts.Home,
-						CWD:       opts.CWD,
-						HostsFile: opts.HostsFile,
-					},
+					BaseOptions: baseOptions(opts),
 					AppID:       opts.AppID,
 					SkillBundle: opts.Bundle,
 					Scope:       parsed.Scope,
@@ -235,11 +215,11 @@ func NewInstallCommand(opts Options) *cobra.Command {
 			return kitup.InstallWorkflowError(report)
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", scope, kitup.InstallUX.ScopeFlag)
-	cmd.Flags().StringArrayVar(&agents, "agent", nil, kitup.InstallUX.AgentFlag)
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, kitup.InstallUX.DryRunFlag)
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, kitup.InstallUX.YesFlag)
-	cmd.Flags().BoolVar(&force, "force", false, kitup.InstallUX.ForceFlag)
+	cmd.Flags().StringVar(&flags.Scope, "scope", "", kitup.InstallUX.ScopeFlag)
+	cmd.Flags().StringArrayVar(&flags.Agents, "agent", nil, kitup.InstallUX.AgentFlag)
+	cmd.Flags().BoolVar(&flags.DryRun, "dry-run", false, kitup.InstallUX.DryRunFlag)
+	cmd.Flags().BoolVarP(&flags.Yes, "yes", "y", false, kitup.InstallUX.YesFlag)
+	cmd.Flags().BoolVar(&flags.Force, "force", false, kitup.InstallUX.ForceFlag)
 	return cmd
 }
 
@@ -332,12 +312,7 @@ func renderStatusReport(out io.Writer, report kitup.StatusReport) {
 	for _, item := range report.Missing {
 		_, _ = fmt.Fprintf(out, "missing\t%s\t%s\n", targetHosts(item), item.TargetDir)
 	}
-	for _, item := range report.Conflicts {
-		_, _ = fmt.Fprintf(out, "conflict\t%s\t%s\t%s\n", targetHosts(item.TargetResult), item.TargetDir, item.Reason)
-	}
-	for _, item := range report.Errors {
-		_, _ = fmt.Fprintf(out, "error\t%s\n", item.Reason)
-	}
+	renderProblems(out, report.Conflicts, report.Errors)
 }
 
 func renderUninstallReport(out io.Writer, report kitup.UninstallReport) {
@@ -347,10 +322,14 @@ func renderUninstallReport(out io.Writer, report kitup.UninstallReport) {
 	for _, item := range report.Skipped {
 		_, _ = fmt.Fprintf(out, "skipped\t%s\t%s\t%s\n", targetHosts(item.TargetResult), item.TargetDir, item.Reason)
 	}
-	for _, item := range report.Conflicts {
+	renderProblems(out, report.Conflicts, report.Errors)
+}
+
+func renderProblems(out io.Writer, conflicts []kitup.TargetStatus, errors []kitup.ReportError) {
+	for _, item := range conflicts {
 		_, _ = fmt.Fprintf(out, "conflict\t%s\t%s\t%s\n", targetHosts(item.TargetResult), item.TargetDir, item.Reason)
 	}
-	for _, item := range report.Errors {
+	for _, item := range errors {
 		_, _ = fmt.Fprintf(out, "error\t%s\n", item.Reason)
 	}
 }

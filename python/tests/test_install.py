@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import kitup
 from kitup import (
@@ -14,7 +15,6 @@ from kitup import (
 )
 from kitup.bundle import compute_bundle_content_hash
 from kitup.types import (
-    BaseOptions,
     InstallOptions,
     InstallReport,
     InstallSelection,
@@ -31,15 +31,14 @@ from kitup.types import (
 )
 
 
-def test_resolve_install_targets_prefers_first_existing_user_dir(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_resolve_install_targets_prefers_first_existing_user_dir(
+    base,
+):
+    home = Path(base.home)
     (home / ".agents" / "skills").mkdir(parents=True)
 
     targets = resolve_install_targets(
-        BaseOptions(home=str(home), cwd=str(workspace)),
+        base,
         ["codex"],
         "user",
         "basic",
@@ -50,15 +49,14 @@ def test_resolve_install_targets_prefers_first_existing_user_dir(tmp_path):
     ]
 
 
-def test_resolve_install_targets_groups_hosts_by_shared_target_dir(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_resolve_install_targets_groups_hosts_by_shared_target_dir(
+    base,
+):
+    home = Path(base.home)
     (home / ".agents" / "skills").mkdir(parents=True)
 
     targets = resolve_install_targets(
-        BaseOptions(home=str(home), cwd=str(workspace)),
+        base,
         ["codex", "warp", "gemini-cli"],
         "user",
         "basic",
@@ -72,45 +70,19 @@ def test_resolve_install_targets_groups_hosts_by_shared_target_dir(tmp_path):
     ]
 
 
-def test_resolve_install_targets_auto_detects_supported_hosts(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_resolve_install_targets_auto_detects_supported_hosts(
+    base,
+    host_options,
+):
+    home = Path(base.home)
     (home / ".codex").mkdir()
     (home / ".claude").mkdir()
     (home / ".agents" / "skills").mkdir(parents=True)
     (home / ".claude" / "skills").mkdir(parents=True)
-    hosts_file = tmp_path / "hosts.json"
-    hosts_file.write_text(
-        json.dumps(
-            {
-                "$schema": "./hosts.schema.json",
-                "schemaVersion": 1,
-                "hosts": [
-                    {
-                        "id": "codex",
-                        "displayName": "Codex",
-                        "projectSkillsDirs": [".agents/skills"],
-                        "userSkillsDirs": ["~/.agents/skills", "~/.codex/skills"],
-                        "detect": ["~/.codex", "~/.agents/skills", "~/.agents"],
-                        "status": "verified",
-                    },
-                    {
-                        "id": "claude-code",
-                        "displayName": "Claude Code",
-                        "projectSkillsDirs": [".claude/skills"],
-                        "userSkillsDirs": ["~/.claude/skills"],
-                        "detect": ["~/.claude"],
-                        "status": "verified",
-                    },
-                ],
-            }
-        )
-    )
+    base = host_options(["codex", "claude-code"])
 
     targets = resolve_install_targets(
-        BaseOptions(home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)),
+        base,
         "auto",
         "user",
         "basic",
@@ -122,38 +94,15 @@ def test_resolve_install_targets_auto_detects_supported_hosts(tmp_path):
     ]
 
 
-def test_resolve_install_targets_skips_hosts_without_scope_path(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_resolve_install_targets_skips_hosts_without_scope_path(
+    base,
+    host_options,
+):
 
-    hosts_file = tmp_path / "hosts.json"
-    hosts_file.write_text(
-        json.dumps(
-            {
-                "$schema": "./hosts.schema.json",
-                "schemaVersion": 1,
-                "hosts": [
-                    {
-                        "id": "eve",
-                        "displayName": "Eve",
-                        "projectSkillsDirs": ["agent/skills"],
-                        "userSkillsDirs": [],
-                        "detect": ["agent", "package.json"],
-                        "status": "community",
-                    }
-                ],
-            }
-        )
-    )
+    base = host_options(["eve"])
 
     targets = resolve_install_targets(
-        BaseOptions(
-            home=str(home),
-            cwd=str(workspace),
-            hosts_file=str(hosts_file),
-        ),
+        base,
         ["eve"],
         "user",
         "basic",
@@ -162,7 +111,7 @@ def test_resolve_install_targets_skips_hosts_without_scope_path(tmp_path):
     assert targets == []
 
 
-def test_install_update_uninstall_round_trip(tmp_path):
+def test_install_update_uninstall_round_trip(base, tmp_path):
     skill = tmp_path / "skill"
     skill.mkdir()
     (skill / "SKILL.md").write_text(
@@ -176,13 +125,10 @@ def test_install_update_uninstall_round_trip(tmp_path):
     legacy = skill / "legacy.txt"
     legacy.write_text("remove me on update\n", encoding="utf-8")
 
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+    home = Path(base.home)
 
     install_options = InstallOptions(
-        base=BaseOptions(home=str(home), cwd=str(workspace)),
+        base=base,
         app_id="kitup-python-test",
         skill_bundle=directory_bundle(str(skill)),
         scope="user",
@@ -231,7 +177,7 @@ def test_install_update_uninstall_round_trip(tmp_path):
 
     uninstall_report = uninstall_bundled_skill(
         UninstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="kitup-python-test",
             skill_name="basic",
             scope="user",
@@ -243,21 +189,17 @@ def test_install_update_uninstall_round_trip(tmp_path):
     assert not target.exists()
 
 
-def test_install_lifecycle_reports_owner_mismatch_and_missing(tmp_path):
+def test_install_lifecycle_reports_owner_mismatch_and_missing(base, tmp_path):
     skill = tmp_path / "skill"
     skill.mkdir()
     (skill / "SKILL.md").write_text(
         "---\nname: basic\ndescription: demo\n---\n",
         encoding="utf-8",
     )
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
 
     install_bundled_skill(
         InstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="kitup-python-test",
             skill_bundle=directory_bundle(str(skill)),
             scope="user",
@@ -267,7 +209,7 @@ def test_install_lifecycle_reports_owner_mismatch_and_missing(tmp_path):
 
     conflict_report = install_bundled_skill(
         InstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="other-app",
             skill_bundle=directory_bundle(str(skill)),
             scope="user",
@@ -276,7 +218,7 @@ def test_install_lifecycle_reports_owner_mismatch_and_missing(tmp_path):
     )
     missing_report = uninstall_bundled_skill(
         UninstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="kitup-python-test",
             skill_name="missing",
             scope="user",
@@ -288,17 +230,14 @@ def test_install_lifecycle_reports_owner_mismatch_and_missing(tmp_path):
     assert missing_report.skipped[0].reason == "missing"
 
 
-def test_install_force_overwrites_unmanaged_and_owner_mismatch(tmp_path):
+def test_install_force_overwrites_unmanaged_and_owner_mismatch(base, tmp_path):
     skill = tmp_path / "skill"
     skill.mkdir()
     (skill / "SKILL.md").write_text(
         "---\nname: basic\ndescription: demo\n---\n",
         encoding="utf-8",
     )
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+    home = Path(base.home)
 
     codex_target = home / ".agents" / "skills" / "basic"
     codex_target.mkdir(parents=True)
@@ -329,7 +268,7 @@ def test_install_force_overwrites_unmanaged_and_owner_mismatch(tmp_path):
 
     report = install_bundled_skill(
         InstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="kitup-python-test",
             skill_bundle=directory_bundle(str(skill)),
             scope="user",

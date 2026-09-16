@@ -1,7 +1,6 @@
-import json
+from pathlib import Path
 
 from kitup import detect_hosts, load_host_spec, resolve_hosts
-from kitup.types import BaseOptions
 
 
 def test_load_host_spec_uses_baked_default_when_no_override():
@@ -29,85 +28,43 @@ def test_resolve_hosts_reports_unknown_ids():
     assert errors == [{"agent": "missing-agent", "reason": "unknown-host"}]
 
 
-def test_detect_hosts_skips_generic_detect_paths_and_sorts_by_scope_path(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_detect_hosts_skips_generic_detect_paths_and_sorts_by_scope_path(
+    base,
+    host_options,
+):
+    home = Path(base.home)
     (home / ".claude").mkdir()
     (home / ".codex").mkdir()
 
-    hosts_file = tmp_path / "hosts.json"
-    hosts_file.write_text(
-        json.dumps(
-            {
-                "$schema": "./hosts.schema.json",
-                "schemaVersion": 1,
-                "hosts": [
-                    {
-                        "id": "generic",
-                        "displayName": "Generic",
-                        "projectSkillsDirs": [".agents/skills"],
-                        "userSkillsDirs": ["~/.agents/skills"],
-                        "detect": ["~/.agents"],
-                        "status": "community",
-                    },
-                    {
-                        "id": "claude-code",
-                        "displayName": "Claude Code",
-                        "projectSkillsDirs": [".claude/skills"],
-                        "userSkillsDirs": ["~/.claude/skills"],
-                        "detect": ["~/.claude"],
-                        "status": "verified",
-                    },
-                    {
-                        "id": "codex",
-                        "displayName": "Codex",
-                        "projectSkillsDirs": [".agents/skills"],
-                        "userSkillsDirs": ["~/.agents/skills", "~/.codex/skills"],
-                        "detect": ["~/.codex"],
-                        "status": "verified",
-                    },
-                ],
-            }
-        )
-    )
+    base = host_options(["generic", "claude-code", "codex"])
 
     hosts = detect_hosts(
-        BaseOptions(
-            home=str(home),
-            cwd=str(workspace),
-            hosts_file=str(hosts_file),
-        ),
+        base,
         scope="user",
     )
 
     assert [host.id for host in hosts] == ["codex", "claude-code"]
 
 
-def test_detect_hosts_scans_all_non_generic_detect_paths(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_detect_hosts_scans_all_non_generic_detect_paths(
+    base,
+):
+    home = Path(base.home)
     (home / ".kimi").mkdir()
 
     hosts = detect_hosts(
-        BaseOptions(
-            home=str(home),
-            cwd=str(workspace),
-        ),
+        base,
         scope="user",
     )
 
     assert "kimi-cli" in [host.id for host in hosts]
 
 
-def test_detect_hosts_never_counts_generic_detect_paths(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_detect_hosts_never_counts_generic_detect_paths(
+    base,
+):
+    home = Path(base.home)
+    workspace = Path(base.cwd)
     (home / ".agents").mkdir()
     (home / ".agents" / "skills").mkdir()
     (home / ".config").mkdir()
@@ -115,10 +72,7 @@ def test_detect_hosts_never_counts_generic_detect_paths(tmp_path):
     (workspace / "package.json").write_text("{}")
 
     hosts = detect_hosts(
-        BaseOptions(
-            home=str(home),
-            cwd=str(workspace),
-        ),
+        base,
         scope="user",
     )
 

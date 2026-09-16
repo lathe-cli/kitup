@@ -1,9 +1,8 @@
 import io
-import json
+from pathlib import Path
 
 import kitup
 from kitup import (
-    BaseOptions,
     GitHubBundleOptions,
     InstallOptions,
     InstallSelectionOptions,
@@ -11,7 +10,6 @@ from kitup import (
     SkillFile,
     agent_selector_from_flags,
     classify_install_workflow_exit,
-    directory_bundle,
     github_bundle,
     install_flag_error,
     install_workflow_error,
@@ -23,19 +21,6 @@ from kitup import (
     run_bundled_skill_install_with_io,
 )
 from kitup.workflow import split_flag_values
-
-
-def write_hosts_file(path, hosts) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "$schema": "./hosts.schema.json",
-                "schemaVersion": 1,
-                "hosts": hosts,
-            }
-        ),
-        encoding="utf-8",
-    )
 
 
 def test_parse_install_flags_defaults_to_user_auto():
@@ -93,32 +78,17 @@ def test_flag_helpers_normalize_lists():
     assert errors == []
 
 
-def test_resolve_install_selection_requires_agents_without_tty_or_yes(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    hosts_file = tmp_path / "hosts.json"
-    home.mkdir()
-    workspace.mkdir()
+def test_resolve_install_selection_requires_agents_without_tty_or_yes(
+    base,
+    host_options,
+):
+    home = Path(base.home)
     (home / ".codex").mkdir()
-    write_hosts_file(
-        hosts_file,
-        [
-            {
-                "id": "codex",
-                "displayName": "Codex",
-                "projectSkillsDirs": [".agents/skills"],
-                "userSkillsDirs": ["~/.agents/skills"],
-                "detect": ["~/.codex"],
-                "status": "verified",
-            }
-        ],
-    )
+    base = host_options(["codex"])
 
     selection = resolve_install_selection(
         InstallSelectionOptions(
-            base=BaseOptions(
-                home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)
-            ),
+            base=base,
             scope="user",
             stdin_tty=False,
             yes=False,
@@ -130,41 +100,18 @@ def test_resolve_install_selection_requires_agents_without_tty_or_yes(tmp_path):
     assert selection.errors == [{"reason": "agent-selection-required"}]
 
 
-def test_resolve_install_selection_tty_prompts_for_multiple_detected_hosts(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    hosts_file = tmp_path / "hosts.json"
-    home.mkdir()
-    workspace.mkdir()
+def test_resolve_install_selection_tty_prompts_for_multiple_detected_hosts(
+    base,
+    host_options,
+):
+    home = Path(base.home)
     (home / ".codex").mkdir()
     (home / ".claude").mkdir()
-    write_hosts_file(
-        hosts_file,
-        [
-            {
-                "id": "codex",
-                "displayName": "Codex",
-                "projectSkillsDirs": [".agents/skills"],
-                "userSkillsDirs": ["~/.agents/skills"],
-                "detect": ["~/.codex"],
-                "status": "verified",
-            },
-            {
-                "id": "claude-code",
-                "displayName": "Claude Code",
-                "projectSkillsDirs": [".claude/skills"],
-                "userSkillsDirs": ["~/.claude/skills"],
-                "detect": ["~/.claude"],
-                "status": "verified",
-            },
-        ],
-    )
+    base = host_options(["codex", "claude-code"])
 
     selection = resolve_install_selection(
         InstallSelectionOptions(
-            base=BaseOptions(
-                home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)
-            ),
+            base=base,
             scope="user",
             stdin_tty=True,
             yes=False,
@@ -178,32 +125,14 @@ def test_resolve_install_selection_tty_prompts_for_multiple_detected_hosts(tmp_p
 
 
 def test_resolve_install_selection_explicit_agents_with_unknown_host_is_pure_error(
-    tmp_path,
+    base,
+    host_options,
 ):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    hosts_file = tmp_path / "hosts.json"
-    home.mkdir()
-    workspace.mkdir()
-    write_hosts_file(
-        hosts_file,
-        [
-            {
-                "id": "codex",
-                "displayName": "Codex",
-                "projectSkillsDirs": [".agents/skills"],
-                "userSkillsDirs": ["~/.agents/skills"],
-                "detect": ["~/.codex"],
-                "status": "verified",
-            }
-        ],
-    )
+    base = host_options(["codex"])
 
     selection = resolve_install_selection(
         InstallSelectionOptions(
-            base=BaseOptions(
-                home=str(home), cwd=str(workspace), hosts_file=str(hosts_file)
-            ),
+            base=base,
             scope="user",
             agents=["codex", "missing-agent"],
             stdin_tty=False,
@@ -259,28 +188,16 @@ def test_error_helpers_map_flag_and_workflow_failures():
     )
 
 
-def test_run_bundled_skill_install_scope_prompt_and_top_level_exports(tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
-    skill = workspace / "skill"
-    skill.mkdir()
-    (skill / "SKILL.md").write_text(
-        "---\nname: basic\ndescription: demo\n---\n",
-        encoding="utf-8",
-    )
+def test_run_bundled_skill_install_scope_prompt_and_top_level_exports(
+    base,
+    install_options,
+):
+    workspace = Path(base.cwd)
     output = io.StringIO()
 
     report = run_bundled_skill_install_with_io(
         InstallWorkflowOptions(
-            install=InstallOptions(
-                base=BaseOptions(home=str(home), cwd=str(workspace)),
-                app_id="example-cli",
-                skill_bundle=directory_bundle(str(skill)),
-                scope="user",
-                agents=["codex"],
-            ),
+            install=install_options,
             stdin_tty=True,
             prompt_scope=True,
             scope_set=False,
@@ -327,18 +244,11 @@ class _ReadlineOnlyTTYInput(io.StringIO):
 
 
 def test_run_bundled_skill_install_uses_stdio_defaults_for_interactive_flow(
-    monkeypatch, tmp_path
+    base,
+    install_options,
+    monkeypatch,
 ):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
-    skill = workspace / "skill"
-    skill.mkdir()
-    (skill / "SKILL.md").write_text(
-        "---\nname: basic\ndescription: demo\n---\n",
-        encoding="utf-8",
-    )
+    workspace = Path(base.cwd)
 
     stdin = _TTYInput("project\ny\n")
     stdout = io.StringIO()
@@ -347,13 +257,7 @@ def test_run_bundled_skill_install_uses_stdio_defaults_for_interactive_flow(
 
     report = run_bundled_skill_install(
         InstallWorkflowOptions(
-            install=InstallOptions(
-                base=BaseOptions(home=str(home), cwd=str(workspace)),
-                app_id="example-cli",
-                skill_bundle=directory_bundle(str(skill)),
-                scope="user",
-                agents=["codex"],
-            ),
+            install=install_options,
             prompt_scope=True,
             scope_set=False,
         )
@@ -367,29 +271,15 @@ def test_run_bundled_skill_install_uses_stdio_defaults_for_interactive_flow(
 
 
 def test_run_bundled_skill_install_reads_interactive_stream_line_by_line(
-    tmp_path,
+    base,
+    install_options,
 ):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
-    skill = workspace / "skill"
-    skill.mkdir()
-    (skill / "SKILL.md").write_text(
-        "---\nname: basic\ndescription: demo\n---\n",
-        encoding="utf-8",
-    )
+    workspace = Path(base.cwd)
 
     output = io.StringIO()
     report = run_bundled_skill_install(
         InstallWorkflowOptions(
-            install=InstallOptions(
-                base=BaseOptions(home=str(home), cwd=str(workspace)),
-                app_id="example-cli",
-                skill_bundle=directory_bundle(str(skill)),
-                scope="user",
-                agents=["codex"],
-            ),
+            install=install_options,
             prompt_scope=True,
             scope_set=False,
             input=_ReadlineOnlyTTYInput("project\ny\n"),
@@ -405,31 +295,18 @@ def test_run_bundled_skill_install_reads_interactive_stream_line_by_line(
 
 
 def test_run_bundled_skill_install_infers_tty_from_custom_input_stream(
-    monkeypatch, tmp_path
+    base,
+    install_options,
+    monkeypatch,
 ):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
-    skill = workspace / "skill"
-    skill.mkdir()
-    (skill / "SKILL.md").write_text(
-        "---\nname: basic\ndescription: demo\n---\n",
-        encoding="utf-8",
-    )
+    workspace = Path(base.cwd)
 
     monkeypatch.setattr("sys.stdin", _NonTTYInput(""))
     stdout = io.StringIO()
 
     report = run_bundled_skill_install(
         InstallWorkflowOptions(
-            install=InstallOptions(
-                base=BaseOptions(home=str(home), cwd=str(workspace)),
-                app_id="example-cli",
-                skill_bundle=directory_bundle(str(skill)),
-                scope="user",
-                agents=["codex"],
-            ),
+            install=install_options,
             prompt_scope=True,
             scope_set=False,
             input=_TTYInput("project\ny\n"),
@@ -444,11 +321,10 @@ def test_run_bundled_skill_install_infers_tty_from_custom_input_stream(
     assert (workspace / ".agents" / "skills" / "basic" / "SKILL.md").exists()
 
 
-def test_plan_bundled_skill_uses_single_github_snapshot(monkeypatch, tmp_path):
-    home = tmp_path / "home"
-    workspace = tmp_path / "workspace"
-    home.mkdir()
-    workspace.mkdir()
+def test_plan_bundled_skill_uses_single_github_snapshot(
+    base,
+    monkeypatch,
+):
 
     fetch_calls: list[str] = []
 
@@ -480,13 +356,13 @@ def test_plan_bundled_skill_uses_single_github_snapshot(monkeypatch, tmp_path):
         raise AssertionError("bundle was re-fetched after snapshot resolution")
 
     monkeypatch.setattr(
-        "kitup.install.fetch_github_directory_with_metadata", fake_fetch_with_metadata
+        "kitup.bundle.fetch_github_directory_with_metadata", fake_fetch_with_metadata
     )
     monkeypatch.setattr("kitup.bundle.fetch_github_directory", unexpected_refetch)
 
     report = plan_bundled_skill(
         InstallOptions(
-            base=BaseOptions(home=str(home), cwd=str(workspace)),
+            base=base,
             app_id="example-cli",
             skill_bundle=github_bundle(
                 GitHubBundleOptions(

@@ -46,7 +46,7 @@ test-python: ## Run Python SDK tests
 fmt: fmt-ts fmt-go fmt-rust fmt-python ## Format all SDK code
 
 fmt-ts: ## Format TypeScript code
-	cd $(TS_DIR) && pnpm exec prettier --write src test ../examples/ts/cli.ts ../scripts/check.mjs ../scripts/check-go-modules.mjs ../scripts/prepare-release.mjs
+	cd $(TS_DIR) && pnpm exec prettier --write src test ../examples/ts/cli.ts ../scripts/check.mjs ../scripts/check-go-modules.mjs ../scripts/prepare-release.mjs ../scripts/golden.mjs ../scripts/golden.d.mts
 
 fmt-go: ## Format Go code
 	gofmt -w $(GO_FILES)
