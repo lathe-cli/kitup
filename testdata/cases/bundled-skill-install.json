@@ -1995,6 +1995,82 @@
       }
     },
     {
+      "id": "invalid-frontmatter-crlf",
+      "operation": "validate",
+      "description": "Preserves skill naming validation for CRLF frontmatter.",
+      "options": {
+        "skillFiles": [
+          {
+            "path": "SKILL.md",
+            "contents": "---\r\nname: Invalid_Name\r\ndescription: Windows line endings.\r\n---\r\n\r\n# CRLF\r\n"
+          }
+        ]
+      },
+      "given": {
+        "dirs": [],
+        "files": {}
+      },
+      "expected": {
+        "valid": false,
+        "errorCode": "invalid-frontmatter"
+      }
+    },
+    {
+      "id": "crlf-skill-install",
+      "operation": "install",
+      "description": "Installs a CRLF skill bundle and hashes its original bytes.",
+      "options": {
+        "appId": "example-cli",
+        "skillFiles": [
+          {
+            "path": "SKILL.md",
+            "contents": "---\r\nname: crlf\r\ndescription: Windows line endings.\r\n---\r\n\r\n# CRLF\r\n"
+          }
+        ],
+        "scope": "user",
+        "agents": [
+          "codex"
+        ],
+        "home": "$HOME",
+        "cwd": "$WORKSPACE"
+      },
+      "given": {
+        "dirs": [
+          "$HOME/.agents/skills"
+        ],
+        "files": {}
+      },
+      "expected": {
+        "report": {
+          "installed": [
+            {
+              "hostId": "codex",
+              "skillName": "crlf",
+              "targetDir": "$HOME/.agents/skills/crlf"
+            }
+          ],
+          "updated": [],
+          "skipped": [],
+          "conflicts": [],
+          "errors": []
+        },
+        "filesPresent": [
+          "$HOME/.agents/skills/crlf/SKILL.md",
+          "$HOME/.agents/skills/crlf/.kitup.json"
+        ],
+        "metadata": {
+          "path": "$HOME/.agents/skills/crlf/.kitup.json",
+          "fields": {
+            "schemaVersion": 1,
+            "appId": "example-cli",
+            "skillName": "crlf",
+            "source": "bundled"
+          },
+          "hash": "from-skill-files"
+        }
+      }
+    },
+    {
       "id": "nested-resources-copied",
       "operation": "install",
       "description": "Copies nested references, scripts, and assets with the bundled skill.",

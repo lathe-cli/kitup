@@ -78,7 +78,7 @@ pub(crate) fn validate_normalized_skill(bundle: &NormalizedSkillBundle) -> Skill
     let Some(file) = bundle.get("SKILL.md") else {
         return invalid_skill("missing-skill-md");
     };
-    let content = String::from_utf8_lossy(&file.contents);
+    let content = String::from_utf8_lossy(&file.contents).replace("\r\n", "\n");
     let Some(rest) = content.strip_prefix("---\n") else {
         return invalid_skill("invalid-frontmatter");
     };

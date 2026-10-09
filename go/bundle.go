@@ -69,7 +69,7 @@ func validateNormalizedSkill(bundle normalizedSkillBundle) SkillInfo {
 	if !ok {
 		return SkillInfo{Valid: false, ErrorCode: "missing-skill-md"}
 	}
-	text := string(file.Contents)
+	text := strings.ReplaceAll(string(file.Contents), "\r\n", "\n")
 	if !strings.HasPrefix(text, "---\n") {
 		return SkillInfo{Valid: false, ErrorCode: "invalid-frontmatter"}
 	}
