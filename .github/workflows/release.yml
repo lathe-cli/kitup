@@ -3,8 +3,7 @@ name: release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+-*"
+      - "v*"
 
 permissions:
   contents: write
@@ -22,6 +21,11 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      - name: Verify SemVer tag and package.json, Cargo.toml, pyproject.toml versions
+        id: meta
+        run: node scripts/check-release-tag.mjs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - uses: actions/setup-go@v5
@@ -35,16 +39,6 @@ jobs:
         run: rustup toolchain install stable --profile minimal
       - name: Check
         run: make check
-      - name: Verify release version
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          VERSION="$version" node -e 'const { readFileSync } = require("node:fs"); const version = process.env.VERSION; const pkg = JSON.parse(readFileSync("ts/package.json", "utf8")); if (pkg.version !== version) { throw new Error("ts/package.json version " + pkg.version + " != " + version); }'
-          rust_version="$(awk -F '"' '/^version = / { print $2; exit }' rust/Cargo.toml)"
-          test "$rust_version" = "$version"
-          python_version="$(awk -F '"' '/^version = / { print $2; exit }' python/pyproject.toml)"
-          test "$python_version" = "$version"
-          go_cobra_core_version="$(awk '/github.com\/lathe-cli\/kitup\/go / { print $2; exit }' go-cobra/go.mod)"
-          test "$go_cobra_core_version" = "v$version"
       - name: Check published versions
         id: published
         run: |
@@ -59,7 +53,7 @@ jobs:
           else
             echo "crate=false" >> "$GITHUB_OUTPUT"
           fi
-          if curl -fsS "https://pypi.org/pypi/kitup-sdk/${version}/json" >/dev/null 2>&1; then
+          if curl -fsS "https://pypi.org/pypi/kitup-sdk/${{ steps.meta.outputs.python_version }}/json" >/dev/null 2>&1; then
             echo "pypi=true" >> "$GITHUB_OUTPUT"
           else
             echo "pypi=false" >> "$GITHUB_OUTPUT"
@@ -106,7 +100,13 @@ jobs:
         if: steps.published.outputs.npm != 'true'
         run: |
           cd ts
-          npm publish --access public --provenance
+          args=(--access public --provenance)
+          if [[ -n "$RELEASE_STAGE" ]]; then
+            args+=(--tag "$RELEASE_STAGE")
+          fi
+          npm publish "${args[@]}"
+        env:
+          RELEASE_STAGE: ${{ steps.meta.outputs.stage }}
       - name: Publish crate
         if: steps.published.outputs.crate != 'true'
         run: |
@@ -121,9 +121,20 @@ jobs:
           packages-dir: python/dist
       - name: Create GitHub release
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            exit 0
+          fi
+          previous_tag="$(git describe --tags --match 'v[0-9]*' --abbrev=0 "$GITHUB_SHA^" | grep -E '^v[0-9]')"
+          test -n "$previous_tag"
+          args=(--verify-tag --title "$GITHUB_REF_NAME" --generate-notes --notes-start-tag "$previous_tag")
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease --latest=false)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${args[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ steps.meta.outputs.is_prerelease }}
       - name: Smoke published packages
         run: |
           scripts/smoke-release.sh "${GITHUB_REF_NAME#v}"

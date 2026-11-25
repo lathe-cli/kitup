@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { verifyReleaseVersions } from "./release-version.mjs";
+
 const root = new URL("../", import.meta.url);
 const rootPath = fileURLToPath(root);
 
@@ -288,37 +290,17 @@ function matchOne(path, pattern, label) {
 
 function validateVersions() {
   const version = readJson("ts/package.json").version;
-  assert(
-    matchOne("rust/Cargo.toml", /^version = "([^"]+)"$/m, "rust version") ===
-      version,
-    "rust version drifted",
-  );
-  assert(
-    matchOne(
-      "python/pyproject.toml",
-      /^version = "([^"]+)"$/m,
-      "python version",
-    ) === version,
-    "python version drifted",
-  );
+  const { pythonVersion } = verifyReleaseVersions(root, version);
   for (const path of ["python/uv.lock", "examples/python/uv.lock"]) {
     assert(
       matchOne(
         path,
         /\[\[package\]\]\nname = "kitup-sdk"\nversion = "([^"]+)"/,
         `${path} kitup-sdk version`,
-      ) === version,
+      ) === pythonVersion,
       `${path} version drifted`,
     );
   }
-  assert(
-    matchOne(
-      "go-cobra/go.mod",
-      /^\s*github\.com\/lathe-cli\/kitup\/go v([^\s]+)$/m,
-      "go-cobra core version",
-    ) === version,
-    "go-cobra core version drifted",
-  );
   assert(
     matchOne(
       "python/pyproject.toml",
@@ -353,7 +335,9 @@ function validateGoModules() {
 function validateReleaseWorkflow() {
   const workflow = readText(".github/workflows/release.yml");
   assert(
-    workflow.includes("github.com\\/lathe-cli\\/kitup\\/go"),
+    readText("scripts/release-version.mjs").includes(
+      "github\\.com\\/lathe-cli\\/kitup\\/go",
+    ),
     "release workflow must check the canonical Go module path",
   );
   assert(
@@ -428,6 +412,13 @@ function detectedEnv(prefix) {
 }
 
 for (const [group, name, command, args, cwd, env] of [
+  [
+    "source",
+    "release-contract",
+    "node",
+    ["--test", "scripts/release.test.mjs"],
+    rootPath,
+  ],
   [
     "source",
     "generated-hosts",
