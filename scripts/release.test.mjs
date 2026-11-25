@@ -67,18 +67,10 @@ function fixture(t, version = "0.1.5-rc.1", pythonVersion = "0.1.5rc1") {
       `require (\n  github.com/lathe-cli/kitup/go v${version}\n)\n`,
     );
   git(dir, "init", "-q");
+  git(dir, "config", "user.name", "Fixture");
+  git(dir, "config", "user.email", "fixture@example.com");
   const tree = git(dir, "mktree");
-  const commit = execFileSync("git", ["commit-tree", tree, "-m", "fixture"], {
-    cwd: dir,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: "Fixture",
-      GIT_AUTHOR_EMAIL: "fixture@example.com",
-      GIT_COMMITTER_NAME: "Fixture",
-      GIT_COMMITTER_EMAIL: "fixture@example.com",
-    },
-  }).trim();
+  const commit = git(dir, "commit-tree", tree, "-m", "fixture");
   git(dir, "update-ref", "HEAD", commit);
   return dir;
 }
