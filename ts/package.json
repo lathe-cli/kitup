@@ -1,6 +1,6 @@
 {
   "name": "@kitup/sdk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Shared installer SDK for bundled Agent Skills.",
   "type": "module",
   "license": "Apache-2.0",
