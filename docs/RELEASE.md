@@ -57,6 +57,35 @@ Do not tag the release branch. Do not publish packages by hand during the normal
 
 The release workflow creates `go/vX.Y.Z`, verifies the Cobra adapter against that published core version, creates `go-cobra/vX.Y.Z`, publishes npm, PyPI, and crates.io packages, creates the GitHub Release, and runs the public install smoke check. Both Go modules keep the same release version; only their publication steps are ordered by dependency.
 
+## Prereleases
+
+Use an explicit SemVer version to prepare a prerelease:
+
+```bash
+node scripts/prepare-release.mjs 0.1.5-alpha.1 --dry-run
+node scripts/prepare-release.mjs 0.1.5-alpha.1
+```
+
+The same command accepts `-beta.N`, `-rc.N`, and stable versions. Each number starts at 1 and has no leading zeros.
+The requested version must exceed the current version. From a prerelease, `patch` promotes its core version to stable.
+The script keeps SemVer in TypeScript, Rust, and Go dependencies. It maps Python versions to `aN`, `bN`, and `rcN`.
+For example, `0.1.5-rc.1` maps to `0.1.5rc1` in Python manifests and lockfiles.
+
+After checkout and Node setup, the workflow validates the tag and manifests before `make check` or publication.
+The workflow also requires the checked-out commit to match the root tag.
+Prereleases use the matching npm channel, such as `rc`. GitHub prereleases use `--prerelease --latest=false`.
+Release notes start from the nearest ancestor root tag that matches `^v[0-9]`. Go module tags do not select the release range.
+Published tags remain immutable. This process does not rename or replace earlier tags.
+
+Run the release checks without publishing packages:
+
+```bash
+node --test scripts/release.test.mjs
+node scripts/check.mjs source
+```
+
+The checks create local fixtures and intercept publication commands. They do not publish packages or GitHub Releases.
+
 ## First npm Release
 
 npm trusted publishing is configured in the npm package settings. For the first package version, the package settings may not exist yet.

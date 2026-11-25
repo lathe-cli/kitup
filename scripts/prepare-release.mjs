@@ -3,6 +3,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { releaseVersion } from "./release-version.mjs";
+
 const rootUrl = new URL("../", import.meta.url);
 const root = fileURLToPath(rootUrl);
 const args = process.argv.slice(2);
@@ -10,12 +12,9 @@ const positional = args.filter((arg) => !arg.startsWith("-"));
 const flags = args.filter((arg) => arg.startsWith("-"));
 const dryRun = flags.includes("--dry-run");
 
-if (
-  positional.length !== 1 ||
-  !["patch", "minor", "major"].includes(positional[0])
-) {
+if (positional.length !== 1) {
   fail(
-    "Usage: node scripts/prepare-release.mjs <patch|minor|major> [--dry-run]",
+    "Usage: node scripts/prepare-release.mjs <patch|minor|major|version> [--dry-run]",
   );
 }
 if (flags.some((arg) => arg !== "--dry-run")) {
@@ -35,7 +34,13 @@ const pythonLockPath = "python/uv.lock";
 const examplePythonLockPath = "examples/python/uv.lock";
 const pkg = JSON.parse(read(packagePath));
 const currentVersion = pkg.version;
-const nextVersion = bumpVersion(currentVersion, bump);
+const current = releaseVersion(currentVersion);
+const nextVersion = ["patch", "minor", "major"].includes(bump)
+  ? bumpVersion(currentVersion, bump)
+  : releaseVersion(bump).version;
+const next = releaseVersion(nextVersion);
+if (compareVersions(current, next) >= 0)
+  fail(`Release version must increase: ${currentVersion} -> ${nextVersion}`);
 const tag = `v${nextVersion}`;
 const branch = `release/${tag}`;
 const changedFiles = [
@@ -62,7 +67,7 @@ replaceOne(cargoPath, /^version = "([^"]+)"$/m, `version = "${nextVersion}"`);
 replaceOne(
   pythonPackagePath,
   /^version = "([^"]+)"$/m,
-  `version = "${nextVersion}"`,
+  `version = "${next.pythonVersion}"`,
 );
 for (const path of [goCobraModPath, exampleGoModPath]) {
   replaceOne(
@@ -121,11 +126,27 @@ function replaceOne(path, pattern, replacement) {
 }
 
 function bumpVersion(version, kind) {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`Unsupported version: ${version}`);
-  const parts = version.split(".").map((part) => Number.parseInt(part, 10));
-  if (kind === "major") return `${parts[0] + 1}.0.0`;
-  if (kind === "minor") return `${parts[0]}.${parts[1] + 1}.0`;
-  return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+  const parsed = releaseVersion(version);
+  if (parsed.stage && kind === "patch") return parsed.core;
+  const parts = parsed.core.split(".").map(BigInt);
+  if (kind === "major") return `${parts[0] + 1n}.0.0`;
+  if (kind === "minor") return `${parts[0]}.${parts[1] + 1n}.0`;
+  return `${parts[0]}.${parts[1]}.${parts[2] + 1n}`;
+}
+
+function compareVersions(left, right) {
+  const ranks = { alpha: 0n, beta: 1n, rc: 2n, "": 3n };
+  const parts = (value) => [
+    ...value.core.split(".").map(BigInt),
+    ranks[value.stage],
+    BigInt(value.number),
+  ];
+  const a = parts(left);
+  const b = parts(right);
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
 }
 
 function assertCleanMain(nextBranch) {

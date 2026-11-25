@@ -48,6 +48,8 @@ Release prep must keep these in sync:
 
 ## Automation
 
-The root `vX.Y.Z` tag triggers `.github/workflows/release.yml`. The workflow runs `make check`, verifies package versions, publishes npm, PyPI, and crates.io packages, creates `go/vX.Y.Z` and `go-cobra/vX.Y.Z`, creates GitHub Release notes, and runs `scripts/smoke-release.sh X.Y.Z`.
+Explicit versions, including prereleases, use `node scripts/prepare-release.mjs <version>`. Python uses the corresponding PEP 440 version.
+
+The root `vX.Y.Z` tag triggers `.github/workflows/release.yml`. The workflow verifies the SemVer tag, package versions, and tag commit before `make check`, publishes npm, PyPI, and crates.io packages, creates `go/vX.Y.Z` and `go-cobra/vX.Y.Z`, creates GitHub Release notes, and runs `scripts/smoke-release.sh X.Y.Z`. Prereleases use a nonstable npm channel and `--prerelease --latest=false` on GitHub. Root release notes exclude Go module tags.
 
 If a registry already accepted a version, do not delete and recreate tags without an explicit recovery plan.
