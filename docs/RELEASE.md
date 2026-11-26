@@ -101,6 +101,8 @@ Then rerun the failed release workflow. The workflow detects already-published n
 
 ## Recovery
 
+crates.io uses Trusted Publishing. Configure a GitHub publisher for `lathe-cli/kitup` and `release.yml` in the crate settings. Keep the requirement for Trusted Publishing enabled. The workflow exchanges its GitHub OIDC identity for a temporary crates.io token. It does not use a repository token secret.
+
 The release workflow is resumable:
 
 - If npm already has the version, npm publish is skipped.
@@ -109,7 +111,15 @@ The release workflow is resumable:
 - If `go/vX.Y.Z` or `go-cobra/vX.Y.Z` already exists, the workflow verifies that it points at the release commit.
 - If Cobra verification fails after the core tag is published, rerunning the workflow reuses the verified core tag and does not create the Cobra tag until its declared core dependency passes.
 
-Do not delete and recreate a release tag after any registry has accepted the version unless the tag points at the wrong commit and the recovery plan is explicit.
+If recovery needs a workflow fix, merge the fix into `main`, then run the updated workflow against the existing root tag:
+
+```bash
+gh workflow run release.yml --repo lathe-cli/kitup --ref main -f tag=v0.1.5
+```
+
+Replace `v0.1.5` with the release tag to recover. GitHub loads the workflow from `main`. Checkout, version checks, Go module tags, package publication, release notes, and smoke checks use the tagged source. Registry provenance from recovery runs identifies the `main` workflow commit. The version gate separately binds the package source to the release tag. Rerunning the original failed run uses its original workflow definition.
+
+Do not delete, recreate, or move an existing release tag. If authentication fails, stop and fix the registry's Trusted Publishing configuration before retrying.
 
 ## Smoke Check
 

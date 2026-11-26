@@ -1,6 +1,12 @@
 name: release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing root release tag
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -13,10 +19,13 @@ jobs:
   release:
     runs-on: ubuntu-latest
     environment: pypi
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -24,8 +33,6 @@ jobs:
       - name: Verify SemVer tag and package.json, Cargo.toml, pyproject.toml versions
         id: meta
         run: node scripts/check-release-tag.mjs
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - uses: actions/setup-go@v5
@@ -42,7 +49,7 @@ jobs:
       - name: Check published versions
         id: published
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           if npm view "@kitup/sdk@${version}" version >/dev/null 2>&1; then
             echo "npm=true" >> "$GITHUB_OUTPUT"
           else
@@ -73,12 +80,13 @@ jobs:
         run: uv build --directory python
       - name: Publish Go core module tag
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
+          release_sha="$(git rev-parse HEAD)"
           go_tag="go/v${version}"
           if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
-            test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
+            test "$(git rev-list -n 1 "${go_tag}")" = "$release_sha"
           else
-            git tag "$go_tag" "$GITHUB_SHA"
+            git tag "$go_tag" "$release_sha"
             git push origin "refs/tags/${go_tag}"
           fi
       - name: Verify Go Cobra against published core
@@ -88,12 +96,13 @@ jobs:
           GONOSUMDB: github.com/lathe-cli/kitup/go
       - name: Publish Go Cobra module tag
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
+          release_sha="$(git rev-parse HEAD)"
           go_tag="go-cobra/v${version}"
           if git rev-parse -q --verify "refs/tags/${go_tag}" >/dev/null; then
-            test "$(git rev-list -n 1 "${go_tag}")" = "$GITHUB_SHA"
+            test "$(git rev-list -n 1 "${go_tag}")" = "$release_sha"
           else
-            git tag "$go_tag" "$GITHUB_SHA"
+            git tag "$go_tag" "$release_sha"
             git push origin "refs/tags/${go_tag}"
           fi
       - name: Publish npm package
@@ -107,13 +116,17 @@ jobs:
           npm publish "${args[@]}"
         env:
           RELEASE_STAGE: ${{ steps.meta.outputs.stage }}
+      - name: Authenticate with crates.io
+        if: steps.published.outputs.crate != 'true'
+        id: crate_auth
+        uses: rust-lang/crates-io-auth-action@v1
       - name: Publish crate
         if: steps.published.outputs.crate != 'true'
         run: |
           cd rust
           cargo publish --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crate_auth.outputs.token }}
       - name: Publish Python package
         if: steps.published.outputs.pypi != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -122,19 +135,19 @@ jobs:
       - name: Create GitHub release
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             exit 0
           fi
-          previous_tag="$(git describe --tags --match 'v[0-9]*' --abbrev=0 "$GITHUB_SHA^" | grep -E '^v[0-9]')"
+          previous_tag="$(git describe --tags --match 'v[0-9]*' --abbrev=0 HEAD^ | grep -E '^v[0-9]')"
           test -n "$previous_tag"
-          args=(--verify-tag --title "$GITHUB_REF_NAME" --generate-notes --notes-start-tag "$previous_tag")
+          args=(--verify-tag --title "$RELEASE_TAG" --generate-notes --notes-start-tag "$previous_tag")
           if [[ "$IS_PRERELEASE" == "true" ]]; then
             args+=(--prerelease --latest=false)
           fi
-          gh release create "$GITHUB_REF_NAME" "${args[@]}"
+          gh release create "$RELEASE_TAG" "${args[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
           IS_PRERELEASE: ${{ steps.meta.outputs.is_prerelease }}
       - name: Smoke published packages
         run: |
-          scripts/smoke-release.sh "${GITHUB_REF_NAME#v}"
+          scripts/smoke-release.sh "${RELEASE_TAG#v}"
