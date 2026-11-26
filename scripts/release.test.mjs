@@ -256,8 +256,9 @@ test("release notes exclude module tags and prereleases never use stable channel
       ...process.env,
       PATH: `${join(dir, "bin")}:${process.env.PATH}`,
       CAPTURE: capturePath,
-      GITHUB_SHA: head,
-      GITHUB_REF_NAME: stage ? `v0.1.5-${stage}.1` : "v0.1.5",
+      GITHUB_SHA: git(dir, "rev-parse", "HEAD^"),
+      GITHUB_REF_NAME: "main",
+      RELEASE_TAG: stage ? `v0.1.5-${stage}.1` : "v0.1.5",
       IS_PRERELEASE: String(Boolean(stage)),
       RELEASE_STAGE: stage,
     };
@@ -270,11 +271,52 @@ test("release notes exclude module tags and prereleases never use stable channel
       assert.equal(result.status, 0, result.stderr);
     }
     const args = readFileSync(capturePath, "utf8");
+    assert.match(
+      args,
+      new RegExp(`create\\n${env.RELEASE_TAG.replaceAll(".", "\\.")}\\n`),
+    );
     assert.match(args, /--notes-start-tag\nv0.1.4\n/);
     assert.doesNotMatch(args, /go(?:-cobra)?\//);
     assert.equal(args.includes("--prerelease\n"), Boolean(stage));
     assert.equal(args.includes("--latest=false\n"), Boolean(stage));
     assert.doesNotMatch(args, /--latest(?:=true)?\n/);
     assert.equal(args.includes(`--tag\n${stage}\n`), Boolean(stage));
+  }
+});
+
+test("recovery reuses Go module tags only at the checked-out release commit", (t) => {
+  const dir = fixture(t, "0.1.5", "0.1.5");
+  const head = git(dir, "rev-parse", "HEAD");
+  const other = git(
+    dir,
+    "commit-tree",
+    git(dir, "mktree"),
+    "-p",
+    "HEAD",
+    "-m",
+    "workflow",
+  );
+  const env = {
+    ...process.env,
+    RELEASE_TAG: "v0.1.5",
+    GITHUB_REF_NAME: "main",
+    GITHUB_SHA: other,
+  };
+  for (const [name, tag] of [
+    ["Publish Go core module tag", "go/v0.1.5"],
+    ["Publish Go Cobra module tag", "go-cobra/v0.1.5"],
+  ]) {
+    git(dir, "tag", tag, head);
+    const run = () =>
+      spawnSync("bash", ["-e", "-c", step(name)], {
+        cwd: dir,
+        encoding: "utf8",
+        env,
+      });
+    const valid = run();
+    assert.equal(valid.status, 0, valid.stderr);
+    git(dir, "tag", "-f", tag, other);
+    assert.notEqual(run().status, 0);
+    assert.equal(git(dir, "rev-parse", tag), other);
   }
 });
